@@ -1,0 +1,363 @@
+// ============================================================================
+// MODELO DE DATOS — Gestión integral de empresa de construcción (Valencia)
+//
+// Notas de diseño:
+//  - SQLite no soporta enums nativos en Prisma, por lo que los campos de tipo
+//    "estado" o "categoría" se guardan como String. Los valores válidos están
+//    documentados junto a cada campo y tipados en el código TypeScript.
+//  - Para migrar a PostgreSQL en el futuro basta con cambiar el "provider"
+//    y la DATABASE_URL; el resto del código (Prisma Client) no cambia.
+//  - Los importes se guardan en euros como Float (suficiente para uso interno;
+//    el redondeo a céntimos se hace en la capa de presentación).
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------------------------------
+// Usuarios (los dos socios)
+// ----------------------------------------------------------------------------
+model Usuario {
+  id           Int    @id @default(autoincrement())
+  nombre       String
+  usuario      String @unique
+  passwordHash String
+}
+
+// ----------------------------------------------------------------------------
+// Configuración global de costes y parámetros de negocio (fila única, id = 1)
+// ----------------------------------------------------------------------------
+model Configuracion {
+  id                        Int   @id @default(1)
+  // % que añaden las 2 pagas extra prorrateadas sobre el coste mensual base
+  porcentajePagasExtra      Float @default(16)
+  // Horas de presencia al mes (para el coste/hora "mensual")
+  horasMes                  Float @default(160)
+  // Horas efectivas de convenio al año en Valencia (para el coste/hora "anualizado")
+  horasAnio                 Float @default(1736)
+  // Costes adicionales anuales por trabajador
+  costeEpisAnual            Float @default(91)
+  costeReconocimientoAnual  Float @default(45)
+  // Recargo de las horas extraordinarias (>40 h/semana), en %
+  recargoHoraExtra          Float @default(25)
+  // Umbral de aviso de margen bajo en presupuestos/simulador, en %
+  umbralMargenAviso         Float @default(15)
+  // Plazo de cobro por defecto para clientes nuevos, en días
+  plazoCobroDefecto         Int   @default(60)
+  // IVA por defecto
+  porcentajeIva             Float @default(21)
+  // Parte del coste empresa mensual que corresponde a la Seguridad Social a
+  // cargo de la empresa (se paga el último día del mes SIGUIENTE al devengo)
+  porcentajeSeguridadSocial Float @default(31.5)
+}
+
+// ----------------------------------------------------------------------------
+// Trabajadores y su documentación
+// ----------------------------------------------------------------------------
+model Trabajador {
+  id                  Int                   @id @default(autoincrement())
+  nombre              String
+  apellidos           String
+  dni                 String                @unique
+  // PEON | OFICIAL_1 | OFICIAL_2 | ESPECIALISTA | ENCARGADO
+  categoria           String
+  // Para especialistas: encofrador, ferrallista, alicatador, yesero...
+  especialidad        String?
+  telefono            String?
+  fechaAlta           DateTime
+  // INDEFINIDO | FIJO_OBRA | TEMPORAL | FIJO_DISCONTINUO
+  tipoContrato        String                @default("INDEFINIDO")
+  // Coste empresa mensual SIN extras prorrateadas (salario + SS empresa)
+  costeEmpresaMensual Float
+  // ACTIVO | INACTIVO
+  estado              String                @default("ACTIVO")
+  notas               String?
+  documentos          DocumentoTrabajador[]
+  asignaciones        Asignacion[]
+  partes              ParteHoras[]
+}
+
+model DocumentoTrabajador {
+  id             Int        @id @default(autoincrement())
+  trabajadorId   Int
+  trabajador     Trabajador @relation(fields: [trabajadorId], references: [id], onDelete: Cascade)
+  // ALTA_SS | TPC | PRL_20H | RECONOCIMIENTO_MEDICO | OTRO
+  tipo           String
+  nombre         String
+  fechaEmision   DateTime?
+  fechaCaducidad DateTime?
+  // Ruta o URL al PDF del documento
+  archivoUrl     String?
+}
+
+// ----------------------------------------------------------------------------
+// CRM: clientes/leads, interacciones y seguimientos
+// ----------------------------------------------------------------------------
+model Cliente {
+  id                  Int           @id @default(autoincrement())
+  nombre              String
+  cif                 String?
+  // PROMOTORA | CONSTRUCTORA | INTERMEDIARIO | PARTICULAR | ARQUITECTO
+  tipo                String
+  personaContacto     String?
+  telefono            String?
+  email               String?
+  // Cómo llegó: referido, visita a obra, Milanuncios, web...
+  origen              String?
+  // Plazo de pago habitual del cliente en días (15/30/60...)
+  plazoPagoDias       Int           @default(60)
+  // Pipeline: FRIO | CONTACTADO | PROPUESTA | NEGOCIACION | GANADO | PERDIDO
+  estadoPipeline      String        @default("FRIO")
+  // Valor estimado del negocio con este lead (para valorar el pipeline)
+  valorEstimado       Float         @default(0)
+  // Control de solvencia (eInforma/Axesor)
+  solvenciaConsultada Boolean       @default(false)
+  solvenciaResultado  String?
+  solvenciaFecha      DateTime?
+  notas               String?
+  creadoEn            DateTime      @default(now())
+  interacciones       Interaccion[]
+  seguimientos        Seguimiento[]
+  obras               Obra[]
+  facturas            Factura[]
+  anticipos           Anticipo[]
+  presupuestos        Presupuesto[]
+  packs               EnvioPack[]
+}
+
+model Interaccion {
+  id        Int      @id @default(autoincrement())
+  clienteId Int
+  cliente   Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  fecha     DateTime
+  // LLAMADA | EMAIL | VISITA | REUNION | OTRO
+  tipo      String
+  resumen   String
+  resultado String?
+}
+
+model Seguimiento {
+  id           Int      @id @default(autoincrement())
+  clienteId    Int
+  cliente      Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  fechaPrevista DateTime
+  descripcion  String
+  completado   Boolean  @default(false)
+}
+
+// ----------------------------------------------------------------------------
+// Obras / proyectos
+// ----------------------------------------------------------------------------
+model Obra {
+  id                 Int          @id @default(autoincrement())
+  clienteId          Int
+  cliente            Cliente      @relation(fields: [clienteId], references: [id])
+  nombre             String
+  direccion          String?
+  // ADMINISTRACION (mano de obra por horas) | PRECIO_CERRADO | REFORMA
+  tipo               String
+  // PRESUPUESTADA | ACTIVA | FINALIZADA | CANCELADA
+  estado             String       @default("PRESUPUESTADA")
+  fechaInicio        DateTime?
+  fechaFinPrevista   DateTime?
+  // Solo para obras a precio cerrado: importe pactado
+  presupuestoCerrado Float?
+  // Plazo de cobro pactado para esta obra (si difiere del cliente)
+  plazoCobroDias     Int?
+  // Margen previsto en % (para comparar previsto vs real)
+  margenPrevisto     Float?
+  notas              String?
+  asignaciones       Asignacion[]
+  partes             ParteHoras[]
+  facturas           Factura[]
+  anticipos          Anticipo[]
+  gastos             Gasto[]
+}
+
+// Asignación de un trabajador a una obra con su precio de venta/hora
+model Asignacion {
+  id              Int        @id @default(autoincrement())
+  obraId          Int
+  obra            Obra       @relation(fields: [obraId], references: [id], onDelete: Cascade)
+  trabajadorId    Int
+  trabajador      Trabajador @relation(fields: [trabajadorId], references: [id], onDelete: Cascade)
+  fechaInicio     DateTime
+  fechaFin        DateTime?
+  // Precio al que se factura la hora de este trabajador en esta obra
+  precioVentaHora Float
+}
+
+// Parte de horas: horas trabajadas por trabajador, obra y día
+model ParteHoras {
+  id           Int        @id @default(autoincrement())
+  obraId       Int
+  obra         Obra       @relation(fields: [obraId], references: [id], onDelete: Cascade)
+  trabajadorId Int
+  trabajador   Trabajador @relation(fields: [trabajadorId], references: [id], onDelete: Cascade)
+  fecha        DateTime
+  horas        Float
+  notas        String?
+}
+
+// ----------------------------------------------------------------------------
+// Facturación / certificaciones y anticipos de cliente
+// ----------------------------------------------------------------------------
+model Factura {
+  id                  Int       @id @default(autoincrement())
+  numero              String    @unique
+  clienteId           Int
+  cliente             Cliente   @relation(fields: [clienteId], references: [id])
+  obraId              Int?
+  obra                Obra?     @relation(fields: [obraId], references: [id])
+  concepto            String
+  fechaEmision        DateTime
+  baseImponible       Float
+  porcentajeIva       Float     @default(21)
+  // Plazo de pago aplicado (días desde emisión)
+  plazoDias           Int
+  fechaCobroEsperada  DateTime
+  // PENDIENTE | COBRADA  (el estado "VENCIDA" se calcula: pendiente + fecha pasada)
+  estado              String    @default("PENDIENTE")
+  fechaCobroReal      DateTime?
+  // Confirming / anticipo bancario de la factura
+  anticipadaConfirming Boolean  @default(false)
+  costeFinanciero     Float     @default(0)
+  fechaAnticipo       DateTime?
+  // Importe de anticipos de cliente descontado de esta factura
+  anticipoAplicado    Float     @default(0)
+}
+
+// Anticipos a cuenta entregados por el cliente al arranque
+model Anticipo {
+  id              Int      @id @default(autoincrement())
+  clienteId       Int
+  cliente         Cliente  @relation(fields: [clienteId], references: [id])
+  obraId          Int?
+  obra            Obra?    @relation(fields: [obraId], references: [id])
+  fecha           DateTime
+  importe         Float
+  // Parte del anticipo ya descontada en certificaciones
+  importeAplicado Float    @default(0)
+  notas           String?
+}
+
+// ----------------------------------------------------------------------------
+// Gastos y proveedores
+// ----------------------------------------------------------------------------
+model Proveedor {
+  id            Int     @id @default(autoincrement())
+  nombre        String
+  cif           String?
+  contacto      String?
+  telefono      String?
+  email         String?
+  plazoPagoDias Int     @default(30)
+  notas         String?
+  gastos        Gasto[]
+}
+
+model Gasto {
+  id           Int        @id @default(autoincrement())
+  concepto     String
+  // ESTRUCTURA (SPA, RC, gestoría, oficina...) | MATERIALES | SUBCONTRATA | FINANCIERO | OTRO
+  categoria    String
+  importe      Float
+  // true = gasto fijo que se repite todos los meses (alimenta el overhead)
+  esRecurrente Boolean    @default(false)
+  // Para gastos puntuales: fecha de pago. Para recurrentes: fecha de inicio.
+  fecha        DateTime
+  pagado       Boolean    @default(false)
+  proveedorId  Int?
+  proveedor    Proveedor? @relation(fields: [proveedorId], references: [id])
+  obraId       Int?
+  obra         Obra?      @relation(fields: [obraId], references: [id])
+  notas        String?
+}
+
+// ----------------------------------------------------------------------------
+// Tarifas de venta y presupuestos
+// ----------------------------------------------------------------------------
+model TarifaCategoria {
+  id              Int    @id @default(autoincrement())
+  // PEON | OFICIAL_1 | OFICIAL_2 | ESPECIALISTA | ENCARGADO
+  categoria       String @unique
+  precioHoraVenta Float
+}
+
+model Presupuesto {
+  id          Int                @id @default(autoincrement())
+  numero      String             @unique
+  clienteId   Int
+  cliente     Cliente            @relation(fields: [clienteId], references: [id])
+  fecha       DateTime
+  // ADMINISTRACION (mano de obra) | PRECIO_CERRADO (partidas con medición)
+  tipo        String
+  // BORRADOR | ENVIADO | ACEPTADO | RECHAZADO
+  estado      String             @default("BORRADOR")
+  condiciones String?
+  notas       String?
+  lineas      LineaPresupuesto[]
+}
+
+model LineaPresupuesto {
+  id             Int         @id @default(autoincrement())
+  presupuestoId  Int
+  presupuesto    Presupuesto @relation(fields: [presupuestoId], references: [id], onDelete: Cascade)
+  descripcion    String
+  // Si la línea es de mano de obra, categoría del trabajador (para coste real)
+  categoria      String?
+  // Horas (administración) o medición (precio cerrado)
+  cantidad       Float
+  precioUnitario Float
+  // Coste unitario estimado (para calcular el margen de la línea)
+  costeUnitario  Float       @default(0)
+}
+
+// ----------------------------------------------------------------------------
+// Documentación de empresa y packs documentales para clientes
+// ----------------------------------------------------------------------------
+model DocumentoEmpresa {
+  id             Int             @id @default(autoincrement())
+  // REA | RC | SPA | CERT_AEAT | CERT_SS | ESCRITURA | PODERES | TC1_TC2 | CIF | OTRO
+  tipo           String
+  nombre         String
+  fechaEmision   DateTime?
+  fechaCaducidad DateTime?
+  archivoUrl     String?
+  notas          String?
+  enviosItems    EnvioPackItem[]
+}
+
+model EnvioPack {
+  id        Int             @id @default(autoincrement())
+  clienteId Int
+  cliente   Cliente         @relation(fields: [clienteId], references: [id])
+  fecha     DateTime
+  notas     String?
+  items     EnvioPackItem[]
+}
+
+model EnvioPackItem {
+  id          Int              @id @default(autoincrement())
+  packId      Int
+  pack        EnvioPack        @relation(fields: [packId], references: [id], onDelete: Cascade)
+  documentoId Int
+  documento   DocumentoEmpresa @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+}
+
+// ----------------------------------------------------------------------------
+// Escenarios guardados del simulador de rentabilidad
+// ----------------------------------------------------------------------------
+model Escenario {
+  id        Int      @id @default(autoincrement())
+  nombre    String
+  creadoEn  DateTime @default(now())
+  // Entradas del escenario serializadas en JSON (equipos, precios, fechas...)
+  datosJson String
+}

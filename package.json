@@ -1,0 +1,16 @@
+{
+  "name": "gestion-construccion",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Aplicación interna de gestión integral para empresa de construcción (Valencia)",
+  "scripts": {
+    "instalar": "npm install --prefix server && npm install --prefix client",
+    "preparar-bd": "npm run db:init --prefix server",
+    "dev": "concurrently -n servidor,cliente -c blue,yellow \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
+    "build": "npm run build --prefix server && npm run build --prefix client",
+    "start": "npm run start --prefix server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
