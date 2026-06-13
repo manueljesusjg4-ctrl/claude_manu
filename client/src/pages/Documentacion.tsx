@@ -2,7 +2,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { fecha, hoyInput, etiqueta } from '../lib/formato';
-import { Aviso, Badge, CabeceraPagina, Cargando, COLORES_BADGE, Modal } from '../components/ui';
+import { Aviso, Badge, CabeceraPagina, CampoArchivo, Cargando, COLORES_BADGE, Modal } from '../components/ui';
 
 const TIPOS_DOC = ['REA', 'RC', 'SPA', 'CERT_AEAT', 'CERT_SS', 'ESCRITURA', 'PODERES', 'TC1_TC2', 'CIF', 'OTRO'];
 
@@ -46,7 +46,7 @@ export function Documentacion() {
               {docs.map((d) => (
                 <tr key={d.id}>
                   <td className="td font-semibold">{etiqueta(d.tipo)}</td>
-                  <td className="td">{d.nombre}{d.archivoUrl && <a href={d.archivoUrl} target="_blank" className="text-acento text-xs ml-2">PDF →</a>}</td>
+                  <td className="td">{d.nombre}{d.archivoUrl && <a href={d.archivoUrl} target="_blank" rel="noreferrer" className="text-acento text-xs ml-2">Ver archivo →</a>}</td>
                   <td className="td">{fecha(d.fechaEmision)}</td>
                   <td className="td">{fecha(d.fechaCaducidad)}</td>
                   <td className="td"><Badge texto={d.estadoCaducidad === 'SIN_CADUCIDAD' ? 'Sin caducidad' : d.estadoCaducidad === 'VIGENTE' ? 'Vigente' : d.estadoCaducidad === 'POR_CADUCAR' ? 'Por caducar' : 'Caducado'} color={COLORES_BADGE[d.estadoCaducidad]} /></td>
@@ -97,7 +97,7 @@ function FormDocEmpresa({ inicial, alGuardar }: { inicial: any; alGuardar: (d: a
         <div><label className="etiqueta">Emisión</label><input type="date" className="campo" value={d.fechaEmision} onChange={(e) => setD({ ...d, fechaEmision: e.target.value })} /></div>
         <div><label className="etiqueta">Caducidad</label><input type="date" className="campo" value={d.fechaCaducidad} onChange={(e) => setD({ ...d, fechaCaducidad: e.target.value })} /></div>
       </div>
-      <div><label className="etiqueta">Enlace al PDF</label><input className="campo" value={d.archivoUrl} onChange={(e) => setD({ ...d, archivoUrl: e.target.value })} /></div>
+      <CampoArchivo valor={d.archivoUrl} alCambiar={(url) => setD({ ...d, archivoUrl: url })} />
       <div className="flex justify-end"><button className="boton-primario">Guardar</button></div>
     </form>
   );

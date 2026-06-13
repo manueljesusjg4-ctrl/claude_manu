@@ -43,4 +43,22 @@ export const api = {
   patch: <T = any>(ruta: string, cuerpo?: unknown) =>
     peticion<T>(ruta, { method: 'PATCH', body: JSON.stringify(cuerpo ?? {}) }),
   del: <T = any>(ruta: string) => peticion<T>(ruta, { method: 'DELETE' }),
+  /** Sube un archivo (PDF/imagen) y devuelve la URL donde quedó guardado. */
+  subir: async (archivo: File): Promise<{ url: string; nombre: string }> => {
+    const token = localStorage.getItem('token');
+    const datos = new FormData();
+    datos.append('archivo', archivo);
+    const res = await fetch('/api/uploads', {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: datos,
+    });
+    const json = await res.json().catch(() => ({}));
+    if (res.status === 401) {
+      alCaducarSesion();
+      throw new ErrorApi('Sesión caducada');
+    }
+    if (!res.ok) throw new ErrorApi(json.error || `Error ${res.status}`);
+    return json;
+  },
 };

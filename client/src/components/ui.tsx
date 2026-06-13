@@ -1,5 +1,6 @@
 // Componentes pequeños reutilizables de la interfaz.
-import { ReactNode, useState } from 'react';
+import { ChangeEvent, ReactNode, useState } from 'react';
+import { api } from '../lib/api';
 import { euros, porcentaje } from '../lib/formato';
 
 /** Tarjeta KPI del dashboard. */
@@ -146,4 +147,42 @@ export function CabeceraPagina({ titulo, subtitulo, children }: { titulo: string
 /** Estado de carga. */
 export function Cargando() {
   return <div className="p-10 text-center text-slate-400 text-sm">Cargando…</div>;
+}
+
+/** Campo para subir un PDF o imagen (foto del documento) y guardarlo en el servidor. */
+export function CampoArchivo({
+  valor, alCambiar, etiqueta = 'Archivo (PDF o foto)',
+}: { valor: string; alCambiar: (url: string) => void; etiqueta?: string }) {
+  const [subiendo, setSubiendo] = useState(false);
+  const [error, setError] = useState('');
+
+  const manejarArchivo = async (e: ChangeEvent<HTMLInputElement>) => {
+    const archivo = e.target.files?.[0];
+    if (!archivo) return;
+    setSubiendo(true);
+    setError('');
+    try {
+      const { url } = await api.subir(archivo);
+      alCambiar(url);
+    } catch (err: any) {
+      setError(err.message || 'Error al subir el archivo');
+    } finally {
+      setSubiendo(false);
+      e.target.value = '';
+    }
+  };
+
+  return (
+    <div>
+      <label className="etiqueta">{etiqueta}</label>
+      <input type="file" accept="application/pdf,image/*" className="campo" onChange={manejarArchivo} disabled={subiendo} />
+      {subiendo && <p className="text-xs text-slate-400 mt-1">Subiendo…</p>}
+      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+      {valor && !subiendo && (
+        <p className="text-xs text-emerald-600 mt-1">
+          ✓ Archivo guardado — <a href={valor} target="_blank" rel="noreferrer" className="text-acento font-semibold">abrir / ver →</a> (sube otro archivo para sustituirlo)
+        </p>
+      )}
+    </div>
+  );
 }

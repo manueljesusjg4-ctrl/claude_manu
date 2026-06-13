@@ -3,7 +3,9 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
+import fs from 'fs';
 import { requiereAuth } from './middleware/auth';
+import { rutasUploads, carpetaSubidas } from './routes/uploads';
 import { rutasAuth } from './routes/auth';
 import { rutasConfiguracion } from './routes/configuracion';
 import { rutasTrabajadores } from './routes/trabajadores';
@@ -22,6 +24,10 @@ import { rutasBackup } from './routes/backup';
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '25mb' })); // límite amplio para importar backups
+
+// Carpeta donde se guardan los PDFs/fotos de documentos subidos
+fs.mkdirSync(carpetaSubidas, { recursive: true });
+app.use('/uploads', express.static(carpetaSubidas));
 
 // Rutas públicas
 app.use('/api/auth', rutasAuth);
@@ -42,6 +48,7 @@ app.use('/api/simulador', requiereAuth, rutasSimulador);
 app.use('/api/dashboard', requiereAuth, rutasDashboard);
 app.use('/api/informes', requiereAuth, rutasInformes);
 app.use('/api/backup', requiereAuth, rutasBackup);
+app.use('/api/uploads', requiereAuth, rutasUploads);
 
 // En producción servimos también el frontend compilado
 const dirCliente = path.join(__dirname, '../../client/dist');
