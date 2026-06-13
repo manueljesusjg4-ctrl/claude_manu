@@ -1,7 +1,7 @@
 // Ficha completa de cliente: datos, solvencia, interacciones, seguimientos,
 // obras, facturas, presupuestos y packs documentales enviados.
 import { FormEvent, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { euros, fecha, fechaInput, hoyInput, etiqueta } from '../lib/formato';
 import { Aviso, Badge, CabeceraPagina, Cargando, COLORES_BADGE, Modal } from '../components/ui';
@@ -9,6 +9,7 @@ import { FormularioCliente } from './Crm';
 
 export function ClienteFicha() {
   const { id } = useParams();
+  const navegar = useNavigate();
   const [c, setC] = useState<any>(null);
   const [modalEditar, setModalEditar] = useState(false);
   const [modalInter, setModalInter] = useState(false);
@@ -26,6 +27,20 @@ export function ClienteFicha() {
       <CabeceraPagina titulo={c.nombre} subtitulo={`${etiqueta(c.tipo)} · ${c.origen || 'Sin origen'}`}>
         <Link to="/crm" className="boton-secundario">← Volver</Link>
         <button className="boton-secundario" onClick={() => setModalEditar(true)}>Editar</button>
+        <button
+          className="boton-peligro"
+          onClick={async () => {
+            if (!confirm(`¿Eliminar el cliente "${c.nombre}"? Esta acción no se puede deshacer.`)) return;
+            try {
+              await api.del(`/api/clientes/${id}`);
+              navegar('/crm');
+            } catch (e: any) {
+              alert(e.message || 'No se pudo eliminar el cliente');
+            }
+          }}
+        >
+          Eliminar
+        </button>
       </CabeceraPagina>
 
       {sinSolvencia && (

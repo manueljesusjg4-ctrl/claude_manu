@@ -1,8 +1,8 @@
 // Listado de obras y alta. La ficha detallada está en ObraFicha.
 import { FormEvent, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api } from '../lib/api';
-import { euros, fecha, hoyInput, etiqueta } from '../lib/formato';
+import { api, ErrorApi } from '../lib/api';
+import { euros, fecha, fechaInput, hoyInput, etiqueta } from '../lib/formato';
 import { Badge, CabeceraPagina, Cargando, COLORES_BADGE, Modal } from '../components/ui';
 
 const TIPOS_OBRA = ['ADMINISTRACION', 'PRECIO_CERRADO', 'REFORMA'];
@@ -12,6 +12,7 @@ export function Obras() {
   const [obras, setObras] = useState<any[] | null>(null);
   const [clientes, setClientes] = useState<any[]>([]);
   const [modal, setModal] = useState(false);
+  const [modalEditar, setModalEditar] = useState<any>(null);
   const [filtro, setFiltro] = useState('TODAS');
 
   const cargar = () => { api.get('/api/obras').then(setObras); api.get('/api/clientes').then(setClientes); };
@@ -19,6 +20,18 @@ export function Obras() {
   if (!obras) return <Cargando />;
 
   const visibles = filtro === 'TODAS' ? obras : obras.filter((o) => o.estado === filtro);
+
+  const guardarObra = async (id: number, d: any, confirmarCierre = false) => {
+    try {
+      await api.put(`/api/obras/${id}`, { ...d, confirmarCierre });
+      setModalEditar(null);
+      cargar();
+    } catch (e: any) {
+      if (e instanceof ErrorApi && e.requiereConfirmacion) {
+        if (confirm(e.message)) return guardarObra(id, d, true);
+      } else alert(e.message || 'No se pudo guardar la obra');
+    }
+  };
 
   return (
     <div>
@@ -32,7 +45,7 @@ export function Obras() {
 
       <div className="tarjeta overflow-x-auto">
         <table className="w-full">
-          <thead><tr><th className="th">Obra</th><th className="th">Cliente</th><th className="th">Tipo</th><th className="th">Estado</th><th className="th">Inicio</th><th className="th">Equipo</th><th className="th">Facturado</th><th className="th">Presupuesto cerrado</th></tr></thead>
+          <thead><tr><th className="th">Obra</th><th className="th">Cliente</th><th className="th">Tipo</th><th className="th">Estado</th><th className="th">Inicio</th><th className="th">Equipo</th><th className="th">Facturado</th><th className="th">Presupuesto cerrado</th><th className="th"></th></tr></thead>
           <tbody>
             {visibles.map((o) => (
               <tr key={o.id} className="hover:bg-slate-50">
@@ -44,6 +57,7 @@ export function Obras() {
                 <td className="td text-center">{o.trabajadoresAsignados}</td>
                 <td className="td">{euros(o.facturado)}</td>
                 <td className="td">{o.presupuestoCerrado ? euros(o.presupuestoCerrado) : '—'}</td>
+                <td className="td"><button className="text-xs text-acento" onClick={() => setModalEditar(o)}>Editar</button></td>
               </tr>
             ))}
           </tbody>
@@ -52,6 +66,16 @@ export function Obras() {
 
       <Modal titulo="Nueva obra" abierto={modal} alCerrar={() => setModal(false)}>
         <FormularioObra clientes={clientes} alGuardar={async (d) => { await api.post('/api/obras', d); setModal(false); cargar(); }} />
+      </Modal>
+
+      <Modal titulo="Editar obra" abierto={!!modalEditar} alCerrar={() => setModalEditar(null)}>
+        {modalEditar && (
+          <FormularioObra
+            inicial={{ ...modalEditar, fechaInicio: fechaInput(modalEditar.fechaInicio), fechaFinPrevista: fechaInput(modalEditar.fechaFinPrevista) }}
+            clientes={clientes}
+            alGuardar={(d) => guardarObra(modalEditar.id, d)}
+          />
+        )}
       </Modal>
     </div>
   );

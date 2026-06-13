@@ -105,7 +105,27 @@ rutasClientes.patch('/:id/pipeline', async (req, res) => {
 });
 
 rutasClientes.delete('/:id', async (req, res) => {
-  await prisma.cliente.delete({ where: { id: Number(req.params.id) } });
+  const id = Number(req.params.id);
+  const c = await prisma.cliente.findUnique({
+    where: { id },
+    include: { _count: { select: { obras: true, facturas: true, presupuestos: true, anticipos: true, packs: true } } },
+  });
+  if (!c) return res.status(404).json({ error: 'Cliente no encontrado' });
+
+  const bloqueos: string[] = [];
+  if (c._count.obras > 0) bloqueos.push(`${c._count.obras} obra(s)`);
+  if (c._count.facturas > 0) bloqueos.push(`${c._count.facturas} factura(s)`);
+  if (c._count.presupuestos > 0) bloqueos.push(`${c._count.presupuestos} presupuesto(s)`);
+  if (c._count.anticipos > 0) bloqueos.push(`${c._count.anticipos} anticipo(s)`);
+  if (c._count.packs > 0) bloqueos.push(`${c._count.packs} pack(s) documental(es)`);
+
+  if (bloqueos.length > 0) {
+    return res.status(409).json({
+      error: `No se puede eliminar "${c.nombre}": tiene ${bloqueos.join(', ')} asociado(s). Elimina o reasigna primero esos datos a otro cliente.`,
+    });
+  }
+
+  await prisma.cliente.delete({ where: { id } });
   res.json({ ok: true });
 });
 

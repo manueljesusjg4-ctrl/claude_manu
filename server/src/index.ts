@@ -1,9 +1,13 @@
 // Punto de entrada del servidor API.
 import 'dotenv/config';
+// Captura errores de rutas async (rechazos de promesas) y los pasa al
+// manejador de errores en vez de tumbar el proceso entero del servidor.
+import 'express-async-errors';
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
+import { Prisma } from '@prisma/client';
 import { requiereAuth } from './middleware/auth';
 import { rutasUploads, carpetaSubidas } from './routes/uploads';
 import { rutasAuth } from './routes/auth';
@@ -62,6 +66,24 @@ app.get(/^(?!\/api).*/, (_req, res) => {
 // Manejo centralizado de errores
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);
+
+  if (err instanceof Prisma.PrismaClientKnownRequestError) {
+    // Restricción de clave foránea: intentan borrar algo que aún tiene datos relacionados
+    if (err.code === 'P2003') {
+      return res.status(409).json({
+        error: 'No se puede eliminar: este registro tiene otros datos relacionados (obras, facturas, presupuestos...). Elimina o reasigna esos datos primero.',
+      });
+    }
+    // Registro no encontrado al actualizar/eliminar
+    if (err.code === 'P2025') {
+      return res.status(404).json({ error: 'El registro ya no existe o fue eliminado.' });
+    }
+    // Valor duplicado en un campo único
+    if (err.code === 'P2002') {
+      return res.status(409).json({ error: 'Ya existe un registro con ese mismo valor (duplicado).' });
+    }
+  }
+
   res.status(500).json({ error: err.message || 'Error interno del servidor' });
 });
 

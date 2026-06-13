@@ -26,6 +26,16 @@ export function Crm() {
     cargar();
   };
 
+  const eliminarCliente = async (c: any) => {
+    if (!confirm(`¿Eliminar el cliente/lead "${c.nombre}"? Esta acción no se puede deshacer.`)) return;
+    try {
+      await api.del(`/api/clientes/${c.id}`);
+      cargar();
+    } catch (e: any) {
+      alert(e.message || 'No se pudo eliminar el cliente');
+    }
+  };
+
   return (
     <div>
       <CabeceraPagina titulo="CRM / Clientes" subtitulo="Captación, pipeline de ventas y seguimiento comercial">
@@ -84,7 +94,7 @@ export function Crm() {
       ) : (
         <div className="tarjeta overflow-x-auto">
           <table className="w-full">
-            <thead><tr><th className="th">Cliente</th><th className="th">Tipo</th><th className="th">Contacto</th><th className="th">Origen</th><th className="th">Estado</th><th className="th">Valor</th><th className="th">Plazo pago</th></tr></thead>
+            <thead><tr><th className="th">Cliente</th><th className="th">Tipo</th><th className="th">Contacto</th><th className="th">Origen</th><th className="th">Estado</th><th className="th">Valor</th><th className="th">Plazo pago</th><th className="th"></th></tr></thead>
             <tbody>
               {clientes.map((c) => (
                 <tr key={c.id} className="hover:bg-slate-50">
@@ -95,6 +105,7 @@ export function Crm() {
                   <td className="td"><Badge texto={etiqueta(c.estadoPipeline)} color={COLORES_BADGE[c.estadoPipeline]} /></td>
                   <td className="td">{c.valorEstimado > 0 ? euros(c.valorEstimado) : '—'}</td>
                   <td className="td">{c.plazoPagoDias} días</td>
+                  <td className="td"><button className="text-xs text-slate-300 hover:text-red-500" title="Eliminar cliente" onClick={() => eliminarCliente(c)}>✕</button></td>
                 </tr>
               ))}
             </tbody>
