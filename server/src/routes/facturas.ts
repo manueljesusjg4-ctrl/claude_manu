@@ -118,7 +118,32 @@ rutasFacturas.patch('/:id/confirming', async (req, res) => {
 });
 
 rutasFacturas.delete('/:id', async (req, res) => {
-  await prisma.factura.delete({ where: { id: Number(req.params.id) } });
+  const id = Number(req.params.id);
+  const f = await prisma.factura.findUnique({ where: { id } });
+  if (!f) return res.status(404).json({ error: 'Factura no encontrada' });
+
+  await prisma.$transaction(async (tx) => {
+    // Si la factura tenía anticipos descontados, los devolvemos como pendientes de aplicar
+    if (f.anticipoAplicado > 0) {
+      const anticipos = await tx.anticipo.findMany({
+        where: {
+          clienteId: f.clienteId,
+          ...(f.obraId ? { OR: [{ obraId: f.obraId }, { obraId: null }] } : {}),
+        },
+        orderBy: { fecha: 'desc' },
+      });
+      let restante = f.anticipoAplicado;
+      for (const a of anticipos) {
+        if (restante <= 0) break;
+        if (a.importeAplicado <= 0) continue;
+        const devolver = Math.min(a.importeAplicado, restante);
+        await tx.anticipo.update({ where: { id: a.id }, data: { importeAplicado: r2(a.importeAplicado - devolver) } });
+        restante -= devolver;
+      }
+    }
+    await tx.factura.delete({ where: { id } });
+  });
+
   res.json({ ok: true });
 });
 

@@ -175,10 +175,30 @@ export function ObraFicha() {
           <div className="tarjeta p-5">
             <h3 className="font-bold text-marino mb-3">Certificaciones</h3>
             {o.facturas.map((f: any) => (
-              <div key={f.id} className="text-sm py-1.5 border-b border-slate-100">
-                <span className="font-semibold">{f.numero}</span> — {euros(f.baseImponible)}{' '}
-                <Badge texto={etiqueta(f.estado)} color={COLORES_BADGE[f.estado]} />
-                <p className="text-xs text-slate-400">{fecha(f.fechaEmision)} · cobro {fecha(f.fechaCobroEsperada)}</p>
+              <div key={f.id} className="flex items-center justify-between gap-2 text-sm py-1.5 border-b border-slate-100">
+                <div>
+                  <span className="font-semibold">{f.numero}</span> — {euros(f.baseImponible)}{' '}
+                  <Badge texto={etiqueta(f.estado)} color={COLORES_BADGE[f.estado]} />
+                  <p className="text-xs text-slate-400">{fecha(f.fechaEmision)} · cobro {fecha(f.fechaCobroEsperada)}</p>
+                </div>
+                <button
+                  className="text-xs text-slate-300 hover:text-red-500 shrink-0"
+                  title="Eliminar factura"
+                  onClick={async () => {
+                    const msg = f.anticipoAplicado > 0
+                      ? `¿Eliminar la factura ${f.numero}? Se devolverán ${euros(f.anticipoAplicado)} de anticipo aplicado a este cliente. Esta acción no se puede deshacer.`
+                      : `¿Eliminar la factura ${f.numero}? Esta acción no se puede deshacer.`;
+                    if (!confirm(msg)) return;
+                    try {
+                      await api.del(`/api/facturas/${f.id}`);
+                      cargar();
+                    } catch (e: any) {
+                      alert(e.message || 'No se pudo eliminar la factura');
+                    }
+                  }}
+                >
+                  ✕
+                </button>
               </div>
             ))}
             {o.facturas.length === 0 && <p className="text-sm text-slate-400">Sin certificar. <Link to="/tesoreria" className="text-acento">Crear factura →</Link></p>}

@@ -161,6 +161,19 @@ function Cobros() {
     cargar();
   };
 
+  const eliminarFactura = async (f: any) => {
+    const msg = f.anticipoAplicado > 0
+      ? `¿Eliminar la factura ${f.numero}? Se devolverán ${euros(f.anticipoAplicado)} de anticipo aplicado a este cliente. Esta acción no se puede deshacer.`
+      : `¿Eliminar la factura ${f.numero}? Esta acción no se puede deshacer.`;
+    if (!confirm(msg)) return;
+    try {
+      await api.del(`/api/facturas/${f.id}`);
+      cargar();
+    } catch (e: any) {
+      alert(e.message || 'No se pudo eliminar la factura');
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -213,6 +226,9 @@ function Cobros() {
                         🏦 Confirming
                       </button>
                     )}
+                    <button className="text-xs font-semibold text-red-600 hover:underline text-left" onClick={() => eliminarFactura(f)}>
+                      ✕ Eliminar
+                    </button>
                   </div>
                 </td>
               </tr>
