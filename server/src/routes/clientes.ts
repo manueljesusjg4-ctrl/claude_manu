@@ -39,7 +39,7 @@ rutasClientes.get('/:id', async (req, res) => {
     include: {
       interacciones: { orderBy: { fecha: 'desc' } },
       seguimientos: { orderBy: { fechaPrevista: 'asc' } },
-      obras: true,
+      obras: { include: { partes: { include: { trabajador: true }, orderBy: { fecha: 'desc' } } } },
       facturas: { orderBy: { fechaEmision: 'desc' } },
       anticipos: true,
       presupuestos: { orderBy: { fecha: 'desc' } },

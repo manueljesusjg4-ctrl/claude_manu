@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
-import { euros, fecha, fechaInput, hoyInput, etiqueta } from '../lib/formato';
+import { euros, fecha, fechaInput, hoyInput, numero, etiqueta } from '../lib/formato';
 import { Aviso, Badge, CabeceraPagina, Cargando, COLORES_BADGE, Modal } from '../components/ui';
 import { FormularioCliente } from './Crm';
 
@@ -125,9 +125,7 @@ export function ClienteFicha() {
             <div className="tarjeta p-5">
               <h3 className="font-bold text-marino mb-3">Obras ({c.obras.length})</h3>
               {c.obras.map((o: any) => (
-                <Link key={o.id} to={`/obras/${o.id}`} className="block text-sm py-1.5 border-b border-slate-100 hover:text-acento">
-                  {o.nombre} <Badge texto={etiqueta(o.estado)} color={COLORES_BADGE[o.estado]} />
-                </Link>
+                <ObraConHoras key={o.id} obra={o} alCambiar={cargar} />
               ))}
               {c.obras.length === 0 && <p className="text-sm text-slate-400">Sin obras.</p>}
             </div>
@@ -160,6 +158,45 @@ export function ClienteFicha() {
       <Modal titulo="Actualizar solvencia" abierto={modalSolv} alCerrar={() => setModalSolv(false)} ancho="max-w-md">
         <FormSolvencia cliente={c} alGuardar={async (d) => { await api.put(`/api/clientes/${id}`, { ...c, ...d }); setModalSolv(false); cargar(); }} />
       </Modal>
+    </div>
+  );
+}
+
+/** Fila de obra con su lista de horas registradas (partes), desplegable y con borrado. */
+function ObraConHoras({ obra, alCambiar }: { obra: any; alCambiar: () => void }) {
+  const [abierto, setAbierto] = useState(false);
+  const partes = obra.partes || [];
+  return (
+    <div className="border-b border-slate-100 last:border-0 py-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <Link to={`/obras/${obra.id}`} className="text-sm font-medium hover:text-acento">
+          {obra.nombre} <Badge texto={etiqueta(obra.estado)} color={COLORES_BADGE[obra.estado]} />
+        </Link>
+        <button className="text-xs font-semibold text-acento whitespace-nowrap" onClick={() => setAbierto(!abierto)}>
+          {abierto ? 'Ocultar horas' : `Horas (${partes.length})`}
+        </button>
+      </div>
+      {abierto && (
+        <div className="mt-1.5 ml-1 space-y-1 max-h-48 overflow-y-auto">
+          {partes.map((p: any) => (
+            <div key={p.id} className="flex items-center justify-between gap-2 text-xs text-slate-500 border-b border-slate-50 pb-1">
+              <span>{fecha(p.fecha)} · {p.trabajador.nombre} {p.trabajador.apellidos} · {numero(p.horas)} h</span>
+              <button
+                className="text-slate-300 hover:text-red-500"
+                title="Eliminar parte de horas"
+                onClick={async () => {
+                  if (!confirm('¿Eliminar este parte de horas?')) return;
+                  await api.del(`/api/obras/partes/${p.id}`);
+                  alCambiar();
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          {partes.length === 0 && <p className="text-xs text-slate-400">Sin horas registradas en esta obra.</p>}
+        </div>
+      )}
     </div>
   );
 }
