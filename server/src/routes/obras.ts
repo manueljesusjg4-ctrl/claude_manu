@@ -204,7 +204,25 @@ rutasObras.put('/:id', async (req, res) => {
 });
 
 rutasObras.delete('/:id', async (req, res) => {
-  await prisma.obra.delete({ where: { id: Number(req.params.id) } });
+  const id = Number(req.params.id);
+  const o = await prisma.obra.findUnique({
+    where: { id },
+    include: { _count: { select: { facturas: true, anticipos: true, gastos: true } } },
+  });
+  if (!o) return res.status(404).json({ error: 'Obra no encontrada' });
+
+  const bloqueos: string[] = [];
+  if (o._count.facturas > 0) bloqueos.push(`${o._count.facturas} factura(s)`);
+  if (o._count.anticipos > 0) bloqueos.push(`${o._count.anticipos} anticipo(s)`);
+  if (o._count.gastos > 0) bloqueos.push(`${o._count.gastos} gasto(s)`);
+
+  if (bloqueos.length > 0) {
+    return res.status(409).json({
+      error: `No se puede eliminar "${o.nombre}": tiene ${bloqueos.join(', ')} asociado(s). Elimina o reasigna primero esos datos.`,
+    });
+  }
+
+  await prisma.obra.delete({ where: { id } });
   res.json({ ok: true });
 });
 

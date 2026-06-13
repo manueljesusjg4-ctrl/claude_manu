@@ -33,6 +33,16 @@ export function Obras() {
     }
   };
 
+  const eliminarObra = async (o: any) => {
+    if (!confirm(`¿Eliminar la obra "${o.nombre}"? Esta acción no se puede deshacer.`)) return;
+    try {
+      await api.del(`/api/obras/${o.id}`);
+      cargar();
+    } catch (e: any) {
+      alert(e.message || 'No se pudo eliminar la obra');
+    }
+  };
+
   return (
     <div>
       <CabeceraPagina titulo="Obras / Proyectos" subtitulo="Control económico, equipo y certificaciones por obra">
@@ -57,7 +67,10 @@ export function Obras() {
                 <td className="td text-center">{o.trabajadoresAsignados}</td>
                 <td className="td">{euros(o.facturado)}</td>
                 <td className="td">{o.presupuestoCerrado ? euros(o.presupuestoCerrado) : '—'}</td>
-                <td className="td"><button className="text-xs text-acento" onClick={() => setModalEditar(o)}>Editar</button></td>
+                <td className="td whitespace-nowrap">
+                  <button className="text-xs text-acento" onClick={() => setModalEditar(o)}>Editar</button>{' '}
+                  <button className="text-xs text-slate-300 hover:text-red-500" title="Eliminar obra" onClick={() => eliminarObra(o)}>✕</button>
+                </td>
               </tr>
             ))}
           </tbody>

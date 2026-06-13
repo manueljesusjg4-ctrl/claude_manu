@@ -1,7 +1,7 @@
 // Ficha de obra: control económico (coste real vs facturado, margen, horas
 // extra), equipo asignado, partes de horas y certificaciones.
 import { FormEvent, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import { api, ErrorApi } from '../lib/api';
 import { euros, fecha, fechaInput, hoyInput, numero, porcentaje, etiqueta } from '../lib/formato';
 import { Aviso, Badge, CabeceraPagina, Cargando, COLORES_BADGE, IndicadorMargen, Modal, TarjetaKpi } from '../components/ui';
@@ -9,6 +9,7 @@ import { FormularioObra } from './Obras';
 
 export function ObraFicha() {
   const { id } = useParams();
+  const navegar = useNavigate();
   const [o, setO] = useState<any>(null);
   const [clientes, setClientes] = useState<any[]>([]);
   const [trabajadores, setTrabajadores] = useState<any[]>([]);
@@ -53,6 +54,20 @@ export function ObraFicha() {
       <CabeceraPagina titulo={o.nombre} subtitulo={`${o.cliente?.nombre} · ${etiqueta(o.tipo)} · ${etiqueta(o.estado)}`}>
         <Link to="/obras" className="boton-secundario">← Volver</Link>
         <button className="boton-secundario" onClick={() => setModalEditar(true)}>Editar</button>
+        <button
+          className="boton-peligro"
+          onClick={async () => {
+            if (!confirm(`¿Eliminar la obra "${o.nombre}"? Esta acción no se puede deshacer.`)) return;
+            try {
+              await api.del(`/api/obras/${id}`);
+              navegar('/obras');
+            } catch (e: any) {
+              alert(e.message || 'No se pudo eliminar la obra');
+            }
+          }}
+        >
+          Eliminar
+        </button>
       </CabeceraPagina>
 
       {aviso && <div className="mb-4"><Aviso tipo="rojo">{aviso}</Aviso></div>}
