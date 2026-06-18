@@ -105,6 +105,30 @@ rutasDashboard.get('/', async (_req, res) => {
     }
   }
 
+  // "Gatillo de cobro": se cierra la quincena o el mes y hay obras activas con
+  // horas trabajadas todavía sin certificar nada desde la última factura.
+  const diaMes = hoy.getDate();
+  const ultimoDiaMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).getDate();
+  const cierraQuincena = diaMes >= 13 && diaMes <= 15;
+  const cierraMes = diaMes >= ultimoDiaMes - 2;
+  if (cierraQuincena || cierraMes) {
+    for (const o of obras) {
+      const ultimaFactura = o.facturas.length > 0
+        ? o.facturas.reduce((max, f) => (f.fechaEmision > max ? f.fechaEmision : max), o.facturas[0].fechaEmision)
+        : null;
+      const partesSinFacturar = o.partes.filter((p) => !ultimaFactura || p.fecha > ultimaFactura);
+      if (partesSinFacturar.length > 0) {
+        const horas = r2(partesSinFacturar.reduce((s, p) => s + p.horas, 0));
+        alertas.push({
+          tipo: 'GATILLO_COBRO',
+          nivel: 'AMBAR',
+          mensaje: `Toca facturar "${o.nombre}": ${horas} h trabajadas desde la última certificación (${cierraQuincena ? 'cierre de quincena' : 'cierre de mes'})`,
+          enlace: `/obras/${o.id}`,
+        });
+      }
+    }
+  }
+
   // ---- Próximas acciones del CRM ---------------------------------------------------
   const seguimientos = await prisma.seguimiento.findMany({
     where: { completado: false },

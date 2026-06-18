@@ -6,21 +6,28 @@ uso en oficina por los dos socios.
 
 - **Frontend**: React + Vite + TypeScript + Tailwind CSS (dashboard tipo SaaS).
 - **Backend**: Node.js + Express + TypeScript (API REST).
-- **Base de datos**: SQLite mediante Prisma ORM (arranca sin configuración).
+- **Base de datos**: PostgreSQL mediante Prisma ORM (en la nube, no se pierde al actualizar).
+- **Despliegue**: Vercel, con dominio propio gratuito (`tuapp.vercel.app`).
 - **Gráficos**: Recharts. **Idioma**: todo en español, euros y fechas DD/MM/AAAA.
 
 ---
 
 ## 1. Requisitos previos
 
-Solo necesitas tener instalado **Node.js 18 o superior** (recomendado 20+).
-Para comprobarlo, abre una terminal y escribe:
+- **Node.js 18 o superior** (recomendado 20+). Para comprobarlo:
 
-```bash
-node --version
-```
+  ```bash
+  node --version
+  ```
 
-Si no lo tienes, descárgalo de https://nodejs.org (versión "LTS").
+  Si no lo tienes, descárgalo de https://nodejs.org (versión "LTS").
+
+- **Una base de datos PostgreSQL gratuita en la nube** (necesaria incluso para
+  desarrollar en tu ordenador, así nunca se pierden los datos al actualizar el
+  código). La opción más sencilla es [Neon](https://neon.tech) o
+  [Supabase](https://supabase.com): crea una cuenta gratuita, crea un proyecto
+  y copia la cadena de conexión (algo como
+  `postgresql://usuario:contrasena@host/basededatos?sslmode=require`).
 
 ---
 
@@ -32,10 +39,12 @@ Abre una terminal **en la carpeta del proyecto** y ejecuta estos comandos en ord
 # 1) Instalar las dependencias del servidor y del cliente
 npm run instalar
 
-# 2) Crear la base de datos y cargar los datos de ejemplo
+# 2) Pegar tu cadena de conexión de PostgreSQL en server/.env (DATABASE_URL)
+
+# 3) Crear las tablas y cargar los datos de ejemplo
 npm run preparar-bd
 
-# 3) Arrancar la aplicación (servidor + web a la vez)
+# 4) Arrancar la aplicación (servidor + web a la vez)
 npm run dev
 ```
 
@@ -68,18 +77,22 @@ Y abrir **http://localhost:5173**.
 
 1. **Dashboard** — Caja proyectada a 12 semanas (resalta en rojo las semanas
    negativas), KPIs de facturación y margen, alertas (documentos caducados,
-   cobros vencidos, obras sin certificar, clientes sin solvencia) y próximas
-   acciones del CRM.
+   cobros vencidos, obras sin certificar, clientes sin solvencia, "gatillo de
+   cobro" al cerrar quincena/mes con horas sin facturar) y próximas acciones
+   del CRM.
 2. **Caja y tesorería** — Flujo de caja semanal y mensual, gestión de cobros y
    facturas, confirming/anticipo de facturas, anticipos de cliente, resumen de
    IVA y simulador *"¿aguanto esta obra?"*.
 3. **CRM / Clientes** — Pipeline Kanban (arrastrar tarjetas) y lista,
    interacciones, seguimientos, control de solvencia y métricas.
 4. **Obras** — Control económico (coste real vs facturado, margen real y
-   previsto), equipo asignado, partes de horas y detección de horas extra
-   (>40 h/semana con recargo).
+   previsto), equipo asignado, encargado responsable, registro de órdenes
+   dadas a la cuadrilla (protección frente a cesión ilegal), partes de horas
+   con validación del encargado, detección de horas extra (>40 h/semana con
+   recargo) y generación de PDF de partes para adjuntar a facturas.
 5. **Trabajadores** — Coste/hora real (mensual, anualizado y con estructura) con
-   desglose, documentación obligatoria con caducidades.
+   desglose, documentación obligatoria con caducidades, entrega de EPIs/PRL
+   con firma digital y gestión de llamamientos para fijos discontinuos.
 6. **Presupuestos** — Generador con margen en tiempo real y exportación a PDF.
 7. **Simulador de rentabilidad** — Escenarios con uno o varios equipos,
    facturación, coste, margen por mes y flujo de caja; guardar y comparar.
@@ -134,26 +147,50 @@ claude_manu/
 
 ---
 
-## 7. Puesta en producción (opcional)
+## 7. Puesta en producción: desplegar en Vercel
 
-Para servir todo desde un único proceso:
+La app está pensada para vivir en la nube en [Vercel](https://vercel.com), de
+forma que **actualizar el código nunca borra los datos guardados** (la base
+de datos vive en PostgreSQL, fuera de Vercel) y no hace falta compilar nada
+a mano: cada vez que subes cambios a GitHub, Vercel reconstruye y publica la
+app sola.
 
-```bash
-npm run build      # compila cliente y servidor
-npm start          # sirve API + web en http://localhost:3001
-```
+1. **Sube el proyecto a un repositorio de GitHub** (si no lo está ya).
+2. **Crea la base de datos** en [Neon](https://neon.tech) o
+   [Supabase](https://supabase.com) (gratis) y copia su `DATABASE_URL`.
+3. En [vercel.com](https://vercel.com), pulsa **Add New → Project** e importa
+   el repositorio. Vercel detecta automáticamente el archivo `vercel.json` de
+   la raíz, que ya indica cómo construir el cliente y la API.
+4. En **Settings → Environment Variables** del proyecto de Vercel, añade:
+   - `DATABASE_URL` → la cadena de conexión de Neon/Supabase del paso 2.
+   - `JWT_SECRET` → cualquier frase larga y secreta (para firmar los inicios de sesión).
+   - `BLOB_READ_WRITE_TOKEN` *(opcional, recomendado)* → solo si vas a subir
+     documentos de trabajadores o firmas de EPI. Se obtiene creando un
+     "Blob Store" gratuito en **Storage → Blob** dentro del propio panel de
+     Vercel; sin este token, los archivos subidos en producción no se
+     conservarían porque el disco del servidor es temporal.
+5. Pulsa **Deploy**. Cuando termine, la primera vez tienes que crear las
+   tablas en la base de datos nueva: desde tu ordenador, ejecuta una vez
+   `npm run preparar-bd --prefix server` con el `DATABASE_URL` de producción
+   puesto en `server/.env` (luego puedes volver a poner ahí tu base de datos
+   de desarrollo si usas una distinta).
+6. Tu app queda publicada en una URL tipo `tuapp.vercel.app` (puedes añadir un
+   dominio propio gratis desde **Settings → Domains**). A partir de aquí,
+   cada `git push` a la rama conectada actualiza la app sola, sin tocar los
+   datos guardados.
+
+### Actualizaciones posteriores
+
+Para publicar cambios solo hace falta subirlos a GitHub (`git push`); Vercel
+los detecta y los despliega automáticamente. No necesitas compilar nada a
+mano ni preocuparte por perder datos: la base de datos vive aparte, en
+Neon/Supabase, y no se reinstala ni se borra en cada despliegue.
 
 ---
 
-## 8. Migrar a PostgreSQL en el futuro
+## 8. Copias de seguridad
 
-El código está preparado: solo hay que cambiar en `server/prisma/schema.prisma`
-el `provider` a `"postgresql"` y la variable `DATABASE_URL` en `server/.env`,
-y volver a ejecutar `npm run preparar-bd`. El resto del código no cambia.
-
----
-
-## 9. Copias de seguridad
-
+Aunque los datos viven en una base de datos en la nube (no se pierden al
+actualizar), conviene guardar copias periódicas en tu ordenador por si acaso.
 Desde **Configuración → Copia de seguridad** puedes exportar toda la base de
 datos a un archivo JSON y volver a importarla cuando quieras.

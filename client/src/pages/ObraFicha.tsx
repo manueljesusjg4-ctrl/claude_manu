@@ -49,9 +49,36 @@ export function ObraFicha() {
     }
   };
 
+  const validarParte = async (p: any) => {
+    if (p.validado) {
+      if (!confirm('¿Quitar la validación de este parte?')) return;
+      await api.patch(`/api/obras/partes/${p.id}/validar`, { validado: false });
+    } else {
+      const nota = prompt(`Confirmar que el encargado${o.encargado ? ' (' + o.encargado.nombre + ' ' + o.encargado.apellidos + ')' : ''} ha dado el visto bueno a estas horas. Nota (opcional):`, '') ?? '';
+      await api.patch(`/api/obras/partes/${p.id}/validar`, { validado: true, nota });
+    }
+    cargar();
+  };
+
+  const descargarPdfPartes = () => {
+    window.open(`/api/obras/${id}/partes/pdf`, '_blank');
+  };
+
+  const anadirOrden = async (directriz: string) => {
+    if (!directriz.trim()) return;
+    await api.post(`/api/obras/${id}/ordenes`, { fecha: hoyInput(), encargadoId: o.encargadoId || null, directriz });
+    cargar();
+  };
+
+  const eliminarOrden = async (oid: number) => {
+    if (!confirm('¿Eliminar esta directriz registrada?')) return;
+    await api.del(`/api/obras/ordenes/${oid}`);
+    cargar();
+  };
+
   return (
     <div>
-      <CabeceraPagina titulo={o.nombre} subtitulo={`${o.cliente?.nombre} · ${etiqueta(o.tipo)} · ${etiqueta(o.estado)}`}>
+      <CabeceraPagina titulo={o.nombre} subtitulo={`${o.cliente?.nombre} · ${etiqueta(o.tipo)} · ${etiqueta(o.estado)}${o.encargado ? ` · Encargado: ${o.encargado.nombre} ${o.encargado.apellidos}` : ''}`}>
         <Link to="/obras" className="boton-secundario">← Volver</Link>
         <button className="boton-secundario" onClick={() => setModalEditar(true)}>Editar</button>
         <button
@@ -131,22 +158,54 @@ export function ObraFicha() {
           <div className="tarjeta p-5">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-bold text-marino">Partes de horas</h3>
-              <button className="boton-secundario text-xs" onClick={() => setModalParte(true)}>+ Añadir parte</button>
+              <div className="flex gap-2">
+                <button className="boton-secundario text-xs" onClick={descargarPdfPartes}>⬇ PDF</button>
+                <button className="boton-secundario text-xs" onClick={() => setModalParte(true)}>+ Añadir parte</button>
+              </div>
             </div>
+            <p className="text-xs text-slate-400 mb-2">Validar un parte deja constancia de que el encargado ha dado el visto bueno a esas horas (trazabilidad ante inspección).</p>
             <div className="max-h-64 overflow-y-auto">
               <table className="w-full">
-                <thead><tr><th className="th">Fecha</th><th className="th">Trabajador</th><th className="th">Horas</th><th className="th"></th></tr></thead>
+                <thead><tr><th className="th">Fecha</th><th className="th">Trabajador</th><th className="th">Horas</th><th className="th">Validado</th><th className="th"></th></tr></thead>
                 <tbody>
                   {o.partes.map((p: any) => (
                     <tr key={p.id}>
                       <td className="td">{fecha(p.fecha)}</td>
                       <td className="td">{p.trabajador.nombre} {p.trabajador.apellidos}</td>
                       <td className="td">{numero(p.horas)} h</td>
+                      <td className="td">
+                        <button
+                          className={`text-xs px-2 py-0.5 rounded-full font-semibold ${p.validado ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}
+                          title={p.validado ? `Validado el ${fecha(p.validadoEn)}${p.validadoNota ? ': ' + p.validadoNota : ''}` : 'Sin validar'}
+                          onClick={() => validarParte(p)}
+                        >
+                          {p.validado ? '✓ Validado' : 'Validar'}
+                        </button>
+                      </td>
                       <td className="td"><button className="text-xs text-slate-300 hover:text-red-500" onClick={async () => { await api.del(`/api/obras/partes/${p.id}`); cargar(); }}>✕</button></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+
+          {/* Registro de órdenes/directrices (antisanciones) */}
+          <div className="tarjeta p-5">
+            <h3 className="font-bold text-marino mb-1">Registro de órdenes a la cuadrilla</h3>
+            <p className="text-xs text-slate-400 mb-3">Prueba documental de que el encargado de la empresa dirige el trabajo (protección frente a cesión ilegal).</p>
+            <FormOrden alGuardar={anadirOrden} />
+            <div className="max-h-48 overflow-y-auto mt-3 space-y-2">
+              {o.ordenes.map((or: any) => (
+                <div key={or.id} className="flex items-start justify-between gap-2 text-sm border border-slate-200 rounded-lg p-2.5">
+                  <div>
+                    <p>{or.directriz}</p>
+                    <p className="text-xs text-slate-400">{fecha(or.fecha)}{or.encargado ? ` · ${or.encargado.nombre} ${or.encargado.apellidos}` : ''}</p>
+                  </div>
+                  <button className="text-xs text-slate-300 hover:text-red-500 shrink-0" onClick={() => eliminarOrden(or.id)}>✕</button>
+                </div>
+              ))}
+              {o.ordenes.length === 0 && <p className="text-sm text-slate-400">Sin directrices registradas todavía.</p>}
             </div>
           </div>
         </div>
@@ -207,7 +266,7 @@ export function ObraFicha() {
       </div>
 
       <Modal titulo="Editar obra" abierto={modalEditar} alCerrar={() => setModalEditar(false)}>
-        <FormularioObra inicial={{ ...o, fechaInicio: fechaInput(o.fechaInicio), fechaFinPrevista: fechaInput(o.fechaFinPrevista) }} clientes={clientes} alGuardar={(d) => guardarObra(d)} />
+        <FormularioObra inicial={{ ...o, fechaInicio: fechaInput(o.fechaInicio), fechaFinPrevista: fechaInput(o.fechaFinPrevista) }} clientes={clientes} trabajadores={trabajadores} alGuardar={(d) => guardarObra(d)} />
       </Modal>
 
       <Modal titulo="Asignar trabajador" abierto={modalAsignar} alCerrar={() => setModalAsignar(false)} ancho="max-w-md">
@@ -218,6 +277,19 @@ export function ObraFicha() {
         <FormParte asignaciones={o.asignaciones} alGuardar={async (d) => { await api.post(`/api/obras/${id}/partes`, d); setModalParte(false); cargar(); }} />
       </Modal>
     </div>
+  );
+}
+
+function FormOrden({ alGuardar }: { alGuardar: (directriz: string) => void }) {
+  const [texto, setTexto] = useState('');
+  return (
+    <form
+      className="flex gap-2"
+      onSubmit={(e: FormEvent) => { e.preventDefault(); if (!texto.trim()) return; alGuardar(texto); setTexto(''); }}
+    >
+      <input className="campo" placeholder="Ej. Hoy: hormigonar zapatas zona norte" value={texto} onChange={(e) => setTexto(e.target.value)} />
+      <button className="boton-secundario text-xs whitespace-nowrap">+ Añadir</button>
+    </form>
   );
 }
 

@@ -20,6 +20,7 @@ rutasTrabajadores.get('/', async (_req, res) => {
     include: {
       documentos: true,
       asignaciones: { where: { fechaFin: null }, include: { obra: true } },
+      llamamientos: { orderBy: { fechaInicio: 'desc' }, take: 1 },
     },
     orderBy: { apellidos: 'asc' },
   });
@@ -38,6 +39,15 @@ rutasTrabajadores.get('/', async (_req, res) => {
         (d) => d.fechaCaducidad && d.fechaCaducidad >= hoy && d.fechaCaducidad <= en30dias
       );
       const obraActual = t.asignaciones[0]?.obra ?? null;
+      // Estado de llamamiento (solo relevante para fijos discontinuos): si el
+      // último llamamiento no tiene fecha de fin, está actualmente llamado/activo.
+      const ultimoLlamamiento = t.llamamientos[0] ?? null;
+      const estadoLlamamiento =
+        t.tipoContrato !== 'FIJO_DISCONTINUO'
+          ? null
+          : ultimoLlamamiento && !ultimoLlamamiento.fechaFin
+          ? 'LLAMADO'
+          : 'EN_ESPERA';
       return {
         ...t,
         coste,
@@ -46,6 +56,7 @@ rutasTrabajadores.get('/', async (_req, res) => {
         docsCaducados: docsCaducados.length,
         docsPorCaducar: docsPorCaducar.length,
         obraActual: obraActual ? { id: obraActual.id, nombre: obraActual.nombre } : null,
+        estadoLlamamiento,
       };
     })
   );
@@ -60,6 +71,8 @@ rutasTrabajadores.get('/:id', async (req, res) => {
       documentos: { orderBy: { tipo: 'asc' } },
       asignaciones: { include: { obra: true }, orderBy: { fechaInicio: 'desc' } },
       partes: { orderBy: { fecha: 'desc' }, take: 50, include: { obra: true } },
+      entregasEpi: { orderBy: { fecha: 'desc' } },
+      llamamientos: { orderBy: { fechaInicio: 'desc' } },
     },
   });
   if (!t) return res.status(404).json({ error: 'Trabajador no encontrado' });
@@ -157,5 +170,59 @@ rutasTrabajadores.put('/documentos/:docId', async (req, res) => {
 
 rutasTrabajadores.delete('/documentos/:docId', async (req, res) => {
   await prisma.documentoTrabajador.delete({ where: { id: Number(req.params.docId) } });
+  res.json({ ok: true });
+});
+
+// ---- Entrega de EPIs / PRL con firma (control legal) -----------------------
+rutasTrabajadores.post('/:id/epis', async (req, res) => {
+  const d = req.body;
+  const e = await prisma.entregaEpi.create({
+    data: {
+      trabajadorId: Number(req.params.id),
+      fecha: new Date(d.fecha),
+      items: d.items,
+      riesgosLeidos: Boolean(d.riesgosLeidos),
+      firmaUrl: d.firmaUrl || null,
+      notas: d.notas || null,
+    },
+  });
+  res.status(201).json(e);
+});
+
+rutasTrabajadores.delete('/epis/:eid', async (req, res) => {
+  await prisma.entregaEpi.delete({ where: { id: Number(req.params.eid) } });
+  res.json({ ok: true });
+});
+
+// ---- Llamamientos (fijos discontinuos) --------------------------------------
+rutasTrabajadores.post('/:id/llamamientos', async (req, res) => {
+  const d = req.body;
+  const l = await prisma.llamamiento.create({
+    data: {
+      trabajadorId: Number(req.params.id),
+      fechaInicio: new Date(d.fechaInicio),
+      fechaFin: d.fechaFin ? new Date(d.fechaFin) : null,
+      motivo: d.motivo || null,
+      notas: d.notas || null,
+    },
+  });
+  res.status(201).json(l);
+});
+
+rutasTrabajadores.put('/llamamientos/:lid', async (req, res) => {
+  const d = req.body;
+  const l = await prisma.llamamiento.update({
+    where: { id: Number(req.params.lid) },
+    data: {
+      fechaFin: d.fechaFin ? new Date(d.fechaFin) : null,
+      motivo: d.motivo || null,
+      notas: d.notas || null,
+    },
+  });
+  res.json(l);
+});
+
+rutasTrabajadores.delete('/llamamientos/:lid', async (req, res) => {
+  await prisma.llamamiento.delete({ where: { id: Number(req.params.lid) } });
   res.json({ ok: true });
 });

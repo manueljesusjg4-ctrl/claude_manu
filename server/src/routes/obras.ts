@@ -4,6 +4,7 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { calcularCosteTrabajador } from '../lib/costes';
 import { clasificarHorasExtra } from '../lib/horas';
+import { generarPdfPartes } from '../lib/pdf';
 
 export const rutasObras = Router();
 
@@ -137,11 +138,13 @@ rutasObras.get('/:id', async (req, res) => {
     where: { id: Number(req.params.id) },
     include: {
       cliente: true,
+      encargado: true,
       asignaciones: { include: { trabajador: true }, orderBy: { fechaInicio: 'desc' } },
       partes: { include: { trabajador: true }, orderBy: { fecha: 'desc' } },
       facturas: { orderBy: { fechaEmision: 'desc' } },
       anticipos: true,
       gastos: true,
+      ordenes: { include: { encargado: true }, orderBy: { fecha: 'desc' } },
     },
   });
   if (!obra) return res.status(404).json({ error: 'Obra no encontrada' });
@@ -163,6 +166,7 @@ rutasObras.post('/', async (req, res) => {
       presupuestoCerrado: d.presupuestoCerrado ? Number(d.presupuestoCerrado) : null,
       plazoCobroDias: d.plazoCobroDias ? Number(d.plazoCobroDias) : null,
       margenPrevisto: d.margenPrevisto ? Number(d.margenPrevisto) : null,
+      encargadoId: d.encargadoId ? Number(d.encargadoId) : null,
       notas: d.notas || null,
     },
   });
@@ -197,6 +201,7 @@ rutasObras.put('/:id', async (req, res) => {
       presupuestoCerrado: d.presupuestoCerrado ? Number(d.presupuestoCerrado) : null,
       plazoCobroDias: d.plazoCobroDias ? Number(d.plazoCobroDias) : null,
       margenPrevisto: d.margenPrevisto ? Number(d.margenPrevisto) : null,
+      encargadoId: d.encargadoId ? Number(d.encargadoId) : null,
       notas: d.notas || null,
     },
   });
@@ -295,5 +300,66 @@ rutasObras.post('/:id/partes', async (req, res) => {
 
 rutasObras.delete('/partes/:pid', async (req, res) => {
   await prisma.parteHoras.delete({ where: { id: Number(req.params.pid) } });
+  res.json({ ok: true });
+});
+
+// Validación del parte por el encargado de la obra: prueba documental de que
+// las horas reflejan las directrices dadas en obra (trazabilidad/antisanciones).
+rutasObras.patch('/partes/:pid/validar', async (req, res) => {
+  const validado = Boolean(req.body.validado);
+  const p = await prisma.parteHoras.update({
+    where: { id: Number(req.params.pid) },
+    data: {
+      validado,
+      validadoEn: validado ? new Date() : null,
+      validadoNota: validado ? req.body.nota || null : null,
+    },
+  });
+  res.json(p);
+});
+
+// PDF formal de partes de horas de una obra (para adjuntar a facturas)
+rutasObras.get('/:id/partes/pdf', async (req, res) => {
+  const obra = await prisma.obra.findUnique({
+    where: { id: Number(req.params.id) },
+    include: { cliente: true },
+  });
+  if (!obra) return res.status(404).json({ error: 'Obra no encontrada' });
+
+  const desde = req.query.desde ? new Date(String(req.query.desde)) : null;
+  const hasta = req.query.hasta ? new Date(String(req.query.hasta)) : null;
+  const partes = await prisma.parteHoras.findMany({
+    where: {
+      obraId: obra.id,
+      ...(desde || hasta
+        ? { fecha: { ...(desde ? { gte: desde } : {}), ...(hasta ? { lte: hasta } : {}) } }
+        : {}),
+    },
+    include: { trabajador: true },
+    orderBy: [{ fecha: 'asc' }, { trabajadorId: 'asc' }],
+  });
+
+  const buffer = await generarPdfPartes(obra, partes);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="partes-${obra.nombre.replace(/\s+/g, '_')}.pdf"`);
+  res.send(buffer);
+});
+
+// ---- Registro de órdenes/directrices (antisanciones) ----------------------------
+rutasObras.post('/:id/ordenes', async (req, res) => {
+  const d = req.body;
+  const o = await prisma.ordenTrabajo.create({
+    data: {
+      obraId: Number(req.params.id),
+      fecha: new Date(d.fecha),
+      encargadoId: d.encargadoId ? Number(d.encargadoId) : null,
+      directriz: d.directriz,
+    },
+  });
+  res.status(201).json(o);
+});
+
+rutasObras.delete('/ordenes/:oid', async (req, res) => {
+  await prisma.ordenTrabajo.delete({ where: { id: Number(req.params.oid) } });
   res.json({ ok: true });
 });

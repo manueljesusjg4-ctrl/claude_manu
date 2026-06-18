@@ -1,23 +1,14 @@
-// Subida de archivos (PDFs y fotos de documentos) para documentación.
+// Subida de archivos (PDFs, fotos de documentos, firmas digitales de EPIs).
 import { Router } from 'express';
 import multer from 'multer';
-import path from 'path';
-import crypto from 'crypto';
+import { guardarArchivo } from '../lib/almacenamiento';
 
-export const carpetaSubidas = path.join(__dirname, '../../uploads');
+export { carpetaSubidas, usaAlmacenamientoLocal } from '../lib/almacenamiento';
 
 const TIPOS_PERMITIDOS = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
 
-const almacenamiento = multer.diskStorage({
-  destination: carpetaSubidas,
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, `${crypto.randomUUID()}${ext}`);
-  },
-});
-
 const subida = multer({
-  storage: almacenamiento,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024 }, // 15 MB
   fileFilter: (_req, file, cb) => {
     if (TIPOS_PERMITIDOS.includes(file.mimetype)) cb(null, true);
@@ -28,9 +19,10 @@ const subida = multer({
 export const rutasUploads = Router();
 
 rutasUploads.post('/', (req, res) => {
-  subida.single('archivo')(req, res, (err: any) => {
+  subida.single('archivo')(req, res, async (err: any) => {
     if (err) return res.status(400).json({ error: err.message || 'Error al subir el archivo' });
     if (!req.file) return res.status(400).json({ error: 'No se ha recibido ningún archivo.' });
-    res.status(201).json({ url: `/uploads/${req.file.filename}`, nombre: req.file.originalname });
+    const url = await guardarArchivo(req.file.buffer, req.file.originalname);
+    res.status(201).json({ url, nombre: req.file.originalname });
   });
 });

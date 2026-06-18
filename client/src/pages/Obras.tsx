@@ -11,11 +11,16 @@ const ESTADOS_OBRA = ['PRESUPUESTADA', 'ACTIVA', 'FINALIZADA', 'CANCELADA'];
 export function Obras() {
   const [obras, setObras] = useState<any[] | null>(null);
   const [clientes, setClientes] = useState<any[]>([]);
+  const [trabajadores, setTrabajadores] = useState<any[]>([]);
   const [modal, setModal] = useState(false);
   const [modalEditar, setModalEditar] = useState<any>(null);
   const [filtro, setFiltro] = useState('TODAS');
 
-  const cargar = () => { api.get('/api/obras').then(setObras); api.get('/api/clientes').then(setClientes); };
+  const cargar = () => {
+    api.get('/api/obras').then(setObras);
+    api.get('/api/clientes').then(setClientes);
+    api.get('/api/trabajadores').then(setTrabajadores);
+  };
   useEffect(cargar, []);
   if (!obras) return <Cargando />;
 
@@ -78,7 +83,7 @@ export function Obras() {
       </div>
 
       <Modal titulo="Nueva obra" abierto={modal} alCerrar={() => setModal(false)}>
-        <FormularioObra clientes={clientes} alGuardar={async (d) => { await api.post('/api/obras', d); setModal(false); cargar(); }} />
+        <FormularioObra clientes={clientes} trabajadores={trabajadores} alGuardar={async (d) => { await api.post('/api/obras', d); setModal(false); cargar(); }} />
       </Modal>
 
       <Modal titulo="Editar obra" abierto={!!modalEditar} alCerrar={() => setModalEditar(null)}>
@@ -86,6 +91,7 @@ export function Obras() {
           <FormularioObra
             inicial={{ ...modalEditar, fechaInicio: fechaInput(modalEditar.fechaInicio), fechaFinPrevista: fechaInput(modalEditar.fechaFinPrevista) }}
             clientes={clientes}
+            trabajadores={trabajadores}
             alGuardar={(d) => guardarObra(modalEditar.id, d)}
           />
         )}
@@ -94,11 +100,12 @@ export function Obras() {
   );
 }
 
-export function FormularioObra({ inicial, clientes, alGuardar }: { inicial?: any; clientes: any[]; alGuardar: (d: any) => void }) {
+export function FormularioObra({ inicial, clientes, trabajadores, alGuardar }: { inicial?: any; clientes: any[]; trabajadores?: any[]; alGuardar: (d: any) => void }) {
   const [o, setO] = useState<any>(inicial || {
     clienteId: '', nombre: '', direccion: '', tipo: 'ADMINISTRACION', estado: 'PRESUPUESTADA',
-    fechaInicio: hoyInput(), fechaFinPrevista: '', presupuestoCerrado: '', plazoCobroDias: '', margenPrevisto: '', notas: '',
+    fechaInicio: hoyInput(), fechaFinPrevista: '', presupuestoCerrado: '', plazoCobroDias: '', margenPrevisto: '', encargadoId: '', notas: '',
   });
+  const encargados = (trabajadores || []).filter((t) => t.categoria === 'ENCARGADO');
   return (
     <form onSubmit={(e: FormEvent) => { e.preventDefault(); alGuardar(o); }} className="grid grid-cols-2 gap-3">
       <div className="col-span-2"><label className="etiqueta">Nombre de la obra *</label><input required className="campo" value={o.nombre} onChange={(e) => setO({ ...o, nombre: e.target.value })} /></div>
@@ -117,6 +124,13 @@ export function FormularioObra({ inicial, clientes, alGuardar }: { inicial?: any
       <div><label className="etiqueta">Presupuesto cerrado (€)</label><input type="number" className="campo" value={o.presupuestoCerrado || ''} onChange={(e) => setO({ ...o, presupuestoCerrado: e.target.value })} placeholder="Solo precio cerrado" /></div>
       <div><label className="etiqueta">Plazo cobro (días)</label><input type="number" className="campo" value={o.plazoCobroDias || ''} onChange={(e) => setO({ ...o, plazoCobroDias: e.target.value })} placeholder="Según cliente" /></div>
       <div><label className="etiqueta">Margen previsto (%)</label><input type="number" className="campo" value={o.margenPrevisto || ''} onChange={(e) => setO({ ...o, margenPrevisto: e.target.value })} /></div>
+      <div>
+        <label className="etiqueta">Encargado responsable</label>
+        <select className="campo" value={o.encargadoId || ''} onChange={(e) => setO({ ...o, encargadoId: e.target.value })}>
+          <option value="">— Sin asignar —</option>
+          {encargados.map((t) => <option key={t.id} value={t.id}>{t.nombre} {t.apellidos}</option>)}
+        </select>
+      </div>
       <div className="col-span-2"><label className="etiqueta">Notas</label><textarea className="campo" rows={2} value={o.notas || ''} onChange={(e) => setO({ ...o, notas: e.target.value })} /></div>
       <div className="col-span-2 flex justify-end"><button className="boton-primario">Guardar</button></div>
     </form>

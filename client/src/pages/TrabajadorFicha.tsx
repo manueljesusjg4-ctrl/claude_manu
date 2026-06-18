@@ -1,6 +1,7 @@
 // Ficha de trabajador: desglose completo del coste/hora (mensual, anualizado,
-// con/sin estructura) y documentación con caducidades.
-import { FormEvent, useEffect, useState } from 'react';
+// con/sin estructura), documentación con caducidades, entrega de EPIs/PRL con
+// firma y gestión de llamamientos (fijos discontinuos).
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { euros, fecha, fechaInput, hoyInput, etiqueta } from '../lib/formato';
@@ -15,6 +16,8 @@ export function TrabajadorFicha() {
   const [t, setT] = useState<any>(null);
   const [modalEditar, setModalEditar] = useState(false);
   const [modalDoc, setModalDoc] = useState<any>(null);
+  const [modalEpi, setModalEpi] = useState(false);
+  const [modalLlamamiento, setModalLlamamiento] = useState(false);
 
   const cargar = () => api.get(`/api/trabajadores/${id}`).then(setT);
   useEffect(() => { cargar(); }, [id]);
@@ -110,6 +113,60 @@ export function TrabajadorFicha() {
         </div>
       </div>
 
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-5">
+        {/* Entrega de EPIs / PRL con firma */}
+        <div className="tarjeta p-5">
+          <div className="flex items-center justify-between mb-1">
+            <h3 className="font-bold text-marino">Entrega de EPIs y PRL</h3>
+            <button className="boton-secundario text-xs" onClick={() => setModalEpi(true)}>+ Registrar entrega</button>
+          </div>
+          <p className="text-xs text-slate-500 mb-3">Registro firmado de equipos de protección entregados y de la información de riesgos recibida.</p>
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {t.entregasEpi.map((e: any) => (
+              <div key={e.id} className="flex items-start justify-between gap-2 text-sm border border-slate-200 rounded-lg p-2.5">
+                <div>
+                  <p className="font-medium">{e.items}</p>
+                  <p className="text-xs text-slate-500">{fecha(e.fecha)} · {e.riesgosLeidos ? 'Riesgos PRL informados' : 'Sin confirmar riesgos PRL'}</p>
+                  {e.firmaUrl && <img src={e.firmaUrl} alt="Firma" className="h-10 mt-1 border border-slate-100 rounded bg-white" />}
+                </div>
+                <button className="text-xs text-slate-300 hover:text-red-500 shrink-0" onClick={async () => { await api.del(`/api/trabajadores/epis/${e.id}`); cargar(); }}>✕</button>
+              </div>
+            ))}
+            {t.entregasEpi.length === 0 && <p className="text-sm text-slate-400">Sin entregas registradas.</p>}
+          </div>
+        </div>
+
+        {/* Llamamientos (solo fijos discontinuos) */}
+        {t.tipoContrato === 'FIJO_DISCONTINUO' && (
+          <div className="tarjeta p-5">
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="font-bold text-marino">Llamamientos</h3>
+              <button className="boton-secundario text-xs" onClick={() => setModalLlamamiento(true)}>+ Nuevo llamamiento</button>
+            </div>
+            <p className="text-xs text-slate-500 mb-3">Periodos de actividad/espera, para controlar y optimizar la rotación de fijos discontinuos.</p>
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {t.llamamientos.map((l: any) => (
+                <div key={l.id} className="flex items-start justify-between gap-2 text-sm border border-slate-200 rounded-lg p-2.5">
+                  <div>
+                    <p className="font-medium">{l.motivo || 'Llamamiento'}</p>
+                    <p className="text-xs text-slate-500">Desde {fecha(l.fechaInicio)}{l.fechaFin ? ` hasta ${fecha(l.fechaFin)}` : ' · activo'}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {!l.fechaFin && (
+                      <button className="text-xs text-acento" onClick={async () => { await api.put(`/api/trabajadores/llamamientos/${l.id}`, { ...l, fechaFin: hoyInput() }); cargar(); }}>
+                        Finalizar
+                      </button>
+                    )}
+                    <button className="text-xs text-slate-300 hover:text-red-500" onClick={async () => { await api.del(`/api/trabajadores/llamamientos/${l.id}`); cargar(); }}>✕</button>
+                  </div>
+                </div>
+              ))}
+              {t.llamamientos.length === 0 && <p className="text-sm text-slate-400">Sin llamamientos registrados.</p>}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Histórico de obras */}
       <div className="tarjeta p-5 mt-5">
         <h3 className="font-bold text-marino mb-3">Obras y asignaciones</h3>
@@ -139,6 +196,14 @@ export function TrabajadorFicha() {
           />
         )}
       </Modal>
+
+      <Modal titulo="Registrar entrega de EPIs / PRL" abierto={modalEpi} alCerrar={() => setModalEpi(false)} ancho="max-w-md">
+        <FormEpi alGuardar={async (d) => { await api.post(`/api/trabajadores/${id}/epis`, d); setModalEpi(false); cargar(); }} />
+      </Modal>
+
+      <Modal titulo="Nuevo llamamiento" abierto={modalLlamamiento} alCerrar={() => setModalLlamamiento(false)} ancho="max-w-md">
+        <FormLlamamiento alGuardar={async (d) => { await api.post(`/api/trabajadores/${id}/llamamientos`, d); setModalLlamamiento(false); cargar(); }} />
+      </Modal>
     </div>
   );
 }
@@ -159,6 +224,108 @@ function FormDoc({ inicial, alGuardar }: { inicial: any; alGuardar: (d: any) => 
         <div><label className="etiqueta">Caducidad</label><input type="date" className="campo" value={d.fechaCaducidad} onChange={(e) => setD({ ...d, fechaCaducidad: e.target.value })} /></div>
       </div>
       <CampoArchivo valor={d.archivoUrl} alCambiar={(url) => setD({ ...d, archivoUrl: url })} />
+      <div className="flex justify-end"><button className="boton-primario">Guardar</button></div>
+    </form>
+  );
+}
+
+function FormEpi({ alGuardar }: { alGuardar: (d: any) => void }) {
+  const [d, setD] = useState({ fecha: hoyInput(), items: '', riesgosLeidos: false, firmaUrl: '', notas: '' });
+  return (
+    <form onSubmit={(e: FormEvent) => { e.preventDefault(); alGuardar(d); }} className="space-y-3">
+      <div><label className="etiqueta">Fecha *</label><input type="date" required className="campo" value={d.fecha} onChange={(e) => setD({ ...d, fecha: e.target.value })} /></div>
+      <div><label className="etiqueta">EPIs entregados *</label><input required className="campo" placeholder="Casco, botas, guantes, arnés..." value={d.items} onChange={(e) => setD({ ...d, items: e.target.value })} /></div>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={d.riesgosLeidos} onChange={(e) => setD({ ...d, riesgosLeidos: e.target.checked })} />
+        El trabajador confirma haber recibido la información de riesgos del puesto (PRL)
+      </label>
+      <div>
+        <label className="etiqueta">Firma del trabajador</label>
+        <PadFirma alFirmar={(url) => setD({ ...d, firmaUrl: url })} />
+        {d.firmaUrl && <p className="text-xs text-emerald-600 mt-1">✓ Firma guardada</p>}
+      </div>
+      <div><label className="etiqueta">Notas</label><input className="campo" value={d.notas} onChange={(e) => setD({ ...d, notas: e.target.value })} /></div>
+      <div className="flex justify-end"><button className="boton-primario">Guardar</button></div>
+    </form>
+  );
+}
+
+function PadFirma({ alFirmar }: { alFirmar: (url: string) => void }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const dibujando = useRef(false);
+  const [subiendo, setSubiendo] = useState(false);
+  const [hayTrazo, setHayTrazo] = useState(false);
+
+  const coords = (e: any, canvas: HTMLCanvasElement) => {
+    const rect = canvas.getBoundingClientRect();
+    const punto = e.touches ? e.touches[0] : e;
+    return { x: punto.clientX - rect.left, y: punto.clientY - rect.top };
+  };
+
+  const iniciar = (e: any) => {
+    e.preventDefault();
+    dibujando.current = true;
+    const canvas = canvasRef.current!;
+    const ctx = canvas.getContext('2d')!;
+    const { x, y } = coords(e, canvas);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+  };
+  const mover = (e: any) => {
+    if (!dibujando.current) return;
+    e.preventDefault();
+    const canvas = canvasRef.current!;
+    const ctx = canvas.getContext('2d')!;
+    const { x, y } = coords(e, canvas);
+    ctx.lineTo(x, y);
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    setHayTrazo(true);
+  };
+  const soltar = () => { dibujando.current = false; };
+  const limpiar = () => {
+    const canvas = canvasRef.current!;
+    canvas.getContext('2d')!.clearRect(0, 0, canvas.width, canvas.height);
+    setHayTrazo(false);
+  };
+  const guardar = () => {
+    const canvas = canvasRef.current!;
+    setSubiendo(true);
+    canvas.toBlob(async (blob) => {
+      if (!blob) { setSubiendo(false); return; }
+      const archivo = new File([blob], `firma-${Date.now()}.png`, { type: 'image/png' });
+      const { url } = await api.subir(archivo);
+      setSubiendo(false);
+      alFirmar(url);
+    }, 'image/png');
+  };
+
+  return (
+    <div>
+      <canvas
+        ref={canvasRef} width={300} height={120}
+        className="border border-slate-300 rounded-lg w-full touch-none bg-white cursor-crosshair"
+        onMouseDown={iniciar} onMouseMove={mover} onMouseUp={soltar} onMouseLeave={soltar}
+        onTouchStart={iniciar} onTouchMove={mover} onTouchEnd={soltar}
+      />
+      <div className="flex justify-between mt-1">
+        <button type="button" className="text-xs text-slate-400" onClick={limpiar}>Borrar</button>
+        <button type="button" className="text-xs text-acento font-semibold" disabled={!hayTrazo || subiendo} onClick={guardar}>
+          {subiendo ? 'Guardando…' : 'Confirmar firma'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function FormLlamamiento({ alGuardar }: { alGuardar: (d: any) => void }) {
+  const [d, setD] = useState({ fechaInicio: hoyInput(), motivo: '', notas: '' });
+  return (
+    <form onSubmit={(e: FormEvent) => { e.preventDefault(); alGuardar(d); }} className="space-y-3">
+      <div><label className="etiqueta">Fecha de inicio *</label><input type="date" required className="campo" value={d.fechaInicio} onChange={(e) => setD({ ...d, fechaInicio: e.target.value })} /></div>
+      <div><label className="etiqueta">Motivo</label><input className="campo" placeholder="Ej. Inicio obra Marcos" value={d.motivo} onChange={(e) => setD({ ...d, motivo: e.target.value })} /></div>
+      <div><label className="etiqueta">Notas</label><input className="campo" value={d.notas} onChange={(e) => setD({ ...d, notas: e.target.value })} /></div>
       <div className="flex justify-end"><button className="boton-primario">Guardar</button></div>
     </form>
   );

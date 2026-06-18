@@ -2,11 +2,12 @@
 // MODELO DE DATOS — Gestión integral de empresa de construcción (Valencia)
 //
 // Notas de diseño:
-//  - SQLite no soporta enums nativos en Prisma, por lo que los campos de tipo
-//    "estado" o "categoría" se guardan como String. Los valores válidos están
-//    documentados junto a cada campo y tipados en el código TypeScript.
-//  - Para migrar a PostgreSQL en el futuro basta con cambiar el "provider"
-//    y la DATABASE_URL; el resto del código (Prisma Client) no cambia.
+//  - Los campos de tipo "estado" o "categoría" se guardan como String (no se
+//    usan enums nativos). Los valores válidos están documentados junto a cada
+//    campo y tipados en el código TypeScript.
+//  - Base de datos: PostgreSQL (pensada para desplegarse en la nube, p.ej.
+//    Vercel + Supabase/Neon, con copias de seguridad gestionadas y sin
+//    depender de un fichero local que se pueda perder al actualizar el código).
 //  - Los importes se guardan en euros como Float (suficiente para uso interno;
 //    el redondeo a céntimos se hace en la capa de presentación).
 // ============================================================================
@@ -16,7 +17,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -81,6 +82,40 @@ model Trabajador {
   documentos          DocumentoTrabajador[]
   asignaciones        Asignacion[]
   partes              ParteHoras[]
+  obrasEncargado      Obra[]                @relation("ObraEncargado")
+  ordenesDadas        OrdenTrabajo[]
+  entregasEpi         EntregaEpi[]
+  llamamientos        Llamamiento[]
+}
+
+// Entrega de EPIs (equipos de protección individual) y formación PRL, con
+// firma del trabajador. Sirve como prueba documental ante una inspección.
+model EntregaEpi {
+  id            Int        @id @default(autoincrement())
+  trabajadorId  Int
+  trabajador    Trabajador @relation(fields: [trabajadorId], references: [id], onDelete: Cascade)
+  fecha         DateTime
+  // Listado de EPIs entregados (texto libre, p.ej. "Casco, botas, guantes, arnés")
+  items         String
+  // El trabajador confirma haber recibido la información de riesgos del puesto
+  riesgosLeidos Boolean    @default(false)
+  // Firma del trabajador, guardada como imagen (PNG en base64) vía /api/uploads
+  firmaUrl      String?
+  notas         String?
+}
+
+// Control de llamamientos para trabajadores fijos discontinuos: cada periodo
+// de actividad ("llamados a trabajar") frente a los periodos de espera/paro.
+model Llamamiento {
+  id           Int        @id @default(autoincrement())
+  trabajadorId Int
+  trabajador   Trabajador @relation(fields: [trabajadorId], references: [id], onDelete: Cascade)
+  fechaInicio  DateTime
+  // null = el llamamiento sigue activo (todavía no se le ha dado fin)
+  fechaFin     DateTime?
+  // Motivo del llamamiento o del fin (ej. "Inicio obra Marcos", "Fin de obra")
+  motivo       String?
+  notas        String?
 }
 
 model DocumentoTrabajador {
@@ -172,12 +207,31 @@ model Obra {
   plazoCobroDias     Int?
   // Margen previsto en % (para comparar previsto vs real)
   margenPrevisto     Float?
+  // Encargado responsable de dirigir esta obra (quien valida partes y da las
+  // directrices a la cuadrilla). Protege frente a una posible cesión ilegal.
+  encargadoId        Int?
+  encargado          Trabajador?  @relation("ObraEncargado", fields: [encargadoId], references: [id])
   notas              String?
   asignaciones       Asignacion[]
   partes             ParteHoras[]
   facturas           Factura[]
   anticipos          Anticipo[]
   gastos             Gasto[]
+  ordenes            OrdenTrabajo[]
+}
+
+// Registro de órdenes/directrices dadas por el encargado a la cuadrilla.
+// Sirve de prueba documental de que la empresa (vía su encargado) dirige el
+// trabajo, frente a una posible sanción por cesión ilegal de trabajadores.
+model OrdenTrabajo {
+  id          Int         @id @default(autoincrement())
+  obraId      Int
+  obra        Obra        @relation(fields: [obraId], references: [id], onDelete: Cascade)
+  fecha       DateTime
+  encargadoId Int?
+  encargado   Trabajador? @relation(fields: [encargadoId], references: [id])
+  directriz   String
+  creadoEn    DateTime    @default(now())
 }
 
 // Asignación de un trabajador a una obra con su precio de venta/hora
@@ -203,6 +257,11 @@ model ParteHoras {
   fecha        DateTime
   horas        Float
   notas        String?
+  // Validación por el encargado de la obra (trazabilidad/antisanciones):
+  // confirma que las horas reflejan las directrices realmente dadas en obra.
+  validado     Boolean    @default(false)
+  validadoEn   DateTime?
+  validadoNota String?
 }
 
 // ----------------------------------------------------------------------------
