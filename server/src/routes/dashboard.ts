@@ -42,9 +42,17 @@ rutasDashboard.get('/', async (_req, res) => {
   const obrasActivas = await prisma.obra.count({ where: { estado: 'ACTIVA' } });
   const asignacionesHoy = await prisma.asignacion.findMany({
     where: { fechaInicio: { lte: hoy }, OR: [{ fechaFin: null }, { fechaFin: { gte: hoy } }] },
-    include: { trabajador: true },
+    include: { trabajador: true, obra: true },
   });
   const enObraHoy = new Set(asignacionesHoy.filter((a) => a.trabajador.estado === 'ACTIVO').map((a) => a.trabajadorId)).size;
+
+  // ---- Fondo de maniobra (liquidez operativa: lo que te deben menos lo que debes) ----
+  const porCobrar = facturas
+    .filter((f) => f.estado === 'PENDIENTE')
+    .reduce((s, f) => s + (f.baseImponible * (1 + f.porcentajeIva / 100) - f.anticipoAplicado), 0);
+  const gastosPendientes = await prisma.gasto.findMany({ where: { pagado: false } });
+  const porPagar = gastosPendientes.reduce((s, g) => s + g.importe, 0);
+  const fondoManiobra = r2(porCobrar - porPagar);
 
   // ---- Alertas -------------------------------------------------------------------
   const alertas: { tipo: string; nivel: 'ROJO' | 'AMBAR'; mensaje: string; enlace: string }[] = [];
@@ -68,6 +76,33 @@ rutasDashboard.get('/', async (_req, res) => {
       alertas.push({ tipo: 'DOC_TRABAJADOR', nivel: 'ROJO', mensaje: `${nombre}: ${d.nombre} CADUCADO`, enlace: `/trabajadores/${d.trabajadorId}` });
     else if (d.fechaCaducidad <= en30)
       alertas.push({ tipo: 'DOC_TRABAJADOR', nivel: 'AMBAR', mensaje: `${nombre}: ${d.nombre} caduca el ${d.fechaCaducidad.toLocaleDateString('es-ES')}`, enlace: `/trabajadores/${d.trabajadorId}` });
+  }
+
+  // Sobrecoste laboral: el coste/hora real de un trabajador asignado supera lo
+  // pactado de venta/hora en más del umbral configurado (editable en Configuración,
+  // porque las tarifas y márgenes van cambiando).
+  for (const a of asignacionesHoy) {
+    if (a.obra.estado !== 'ACTIVA' || a.trabajador.estado !== 'ACTIVO') continue;
+    const costeHora = calcularCosteTrabajador(a.trabajador.costeEmpresaMensual, config).costeHoraAnualizado;
+    const sobrecoste = r2(costeHora - a.precioVentaHora);
+    if (sobrecoste > config.umbralSobrecosteHora) {
+      alertas.push({
+        tipo: 'SOBRECOSTE_LABORAL',
+        nivel: sobrecoste > config.umbralSobrecosteHora * 2 ? 'ROJO' : 'AMBAR',
+        mensaje: `${a.trabajador.nombre} ${a.trabajador.apellidos} en "${a.obra.nombre}": cuesta ${sobrecoste.toLocaleString('es-ES')} €/h más de lo facturado`,
+        enlace: `/obras/${a.obraId}`,
+      });
+    }
+  }
+
+  // Documentos de subcontratas/autónomos (REA, TC2, seguro RC...)
+  const docsProveedor = await prisma.documentoProveedor.findMany({ include: { proveedor: true } });
+  for (const d of docsProveedor) {
+    if (!d.fechaCaducidad) continue;
+    if (d.fechaCaducidad < hoy)
+      alertas.push({ tipo: 'DOC_PROVEEDOR', nivel: 'ROJO', mensaje: `${d.proveedor.nombre}: ${d.nombre} CADUCADO`, enlace: '/gastos' });
+    else if (d.fechaCaducidad <= en30)
+      alertas.push({ tipo: 'DOC_PROVEEDOR', nivel: 'AMBAR', mensaje: `${d.proveedor.nombre}: ${d.nombre} caduca el ${d.fechaCaducidad.toLocaleDateString('es-ES')}`, enlace: '/gastos' });
   }
 
   // Cobros vencidos sin pagar
@@ -149,6 +184,9 @@ rutasDashboard.get('/', async (_req, res) => {
       obrasActivas,
       trabajadoresActivos: trabajadores.length,
       enObraHoy,
+      fondoManiobra,
+      porCobrar: r2(porCobrar),
+      porPagar: r2(porPagar),
     },
     alertas,
     seguimientos: seguimientos.map((s) => ({

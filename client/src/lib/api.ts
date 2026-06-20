@@ -61,4 +61,21 @@ export const api = {
     if (!res.ok) throw new ErrorApi(json.error || `Error ${res.status}`);
     return json;
   },
+  /** Descarga un archivo binario (PDF...) de una ruta protegida y lo guarda. */
+  descargar: async (ruta: string, nombreSugerido: string): Promise<void> => {
+    const token = localStorage.getItem('token');
+    const res = await fetch(ruta, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (res.status === 401) {
+      alCaducarSesion();
+      throw new ErrorApi('Sesión caducada');
+    }
+    if (!res.ok) throw new ErrorApi(`Error ${res.status}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = nombreSugerido;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
 };

@@ -26,6 +26,7 @@ rutasConfiguracion.put('/', async (req, res) => {
       plazoCobroDefecto: Number(datos.plazoCobroDefecto),
       porcentajeIva: Number(datos.porcentajeIva),
       porcentajeSeguridadSocial: Number(datos.porcentajeSeguridadSocial),
+      umbralSobrecosteHora: Number(datos.umbralSobrecosteHora),
     },
   });
   res.json(config);

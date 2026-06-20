@@ -80,6 +80,7 @@ export function Configuracion() {
             {campo('costeReconocimientoAnual', 'Reconocimiento médico/año', '€')}
             {campo('recargoHoraExtra', 'Recargo horas extra', '%')}
             {campo('umbralMargenAviso', 'Aviso de margen bajo si <', '%')}
+            {campo('umbralSobrecosteHora', 'Aviso de sobrecoste laboral si supera en', '€/h')}
             {campo('plazoCobroDefecto', 'Plazo cobro por defecto', 'días')}
             {campo('porcentajeIva', 'IVA por defecto', '%')}
           </div>

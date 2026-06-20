@@ -2,13 +2,13 @@
 // por categoría. Exportación a CSV (Excel) y a PDF (impresión).
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
-import { euros, porcentaje, etiqueta, numero, exportarCSV } from '../lib/formato';
+import { euros, fecha, hoyInput, porcentaje, etiqueta, numero, exportarCSV } from '../lib/formato';
 import { CabeceraPagina, Cargando } from '../components/ui';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 
 const COLORES = ['#162D45', '#E6530C', '#10b981', '#3b82f6', '#f59e0b', '#8b5cf6'];
 
-type Pestania = 'obras' | 'facturacion' | 'laboral' | 'categorias';
+type Pestania = 'obras' | 'facturacion' | 'laboral' | 'categorias' | 'gestoria';
 
 export function Informes() {
   const [pestania, setPestania] = useState<Pestania>('obras');
@@ -17,6 +17,7 @@ export function Informes() {
     { id: 'facturacion', texto: 'Facturación' },
     { id: 'laboral', texto: 'Coste laboral' },
     { id: 'categorias', texto: 'Rentabilidad por categoría' },
+    { id: 'gestoria', texto: 'Exportar a gestoría' },
   ];
   return (
     <div>
@@ -32,6 +33,7 @@ export function Informes() {
       {pestania === 'facturacion' && <InformeFacturacion />}
       {pestania === 'laboral' && <InformeLaboral />}
       {pestania === 'categorias' && <InformeCategorias />}
+      {pestania === 'gestoria' && <InformeGestoria />}
     </div>
   );
 }
@@ -154,6 +156,66 @@ function InformeCategorias() {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function InformeGestoria() {
+  const haceUnMes = new Date(); haceUnMes.setMonth(haceUnMes.getMonth() - 1);
+  const [desde, setDesde] = useState(haceUnMes.toISOString().slice(0, 10));
+  const [hasta, setHasta] = useState(hoyInput());
+  const [movimientos, setMovimientos] = useState<any[] | null>(null);
+
+  const cargar = () => {
+    const params = new URLSearchParams({ desde, hasta });
+    api.get(`/api/informes/gestoria?${params}`).then(setMovimientos);
+  };
+  useEffect(cargar, []);
+
+  const totalIngresos = movimientos?.filter((m) => m.tipo === 'INGRESO').reduce((s, m) => s + m.total, 0) ?? 0;
+  const totalGastos = movimientos?.filter((m) => m.tipo === 'GASTO').reduce((s, m) => s + m.total, 0) ?? 0;
+
+  return (
+    <div className="space-y-5">
+      <p className="text-sm text-slate-600">Listado de facturas emitidas y gastos del periodo, listo para enviar a la gestoría (CSV importable en Excel/contabilidad).</p>
+      <div className="tarjeta p-4 flex flex-wrap items-end gap-3">
+        <div><label className="etiqueta">Desde</label><input type="date" className="campo" value={desde} onChange={(e) => setDesde(e.target.value)} /></div>
+        <div><label className="etiqueta">Hasta</label><input type="date" className="campo" value={hasta} onChange={(e) => setHasta(e.target.value)} /></div>
+        <button className="boton-secundario" onClick={cargar}>Filtrar</button>
+        {movimientos && (
+          <button className="boton-primario no-imprimir ml-auto" onClick={() => exportarCSV(`gestoria-${desde}-a-${hasta}.csv`, movimientos)}>⬇ Exportar CSV</button>
+        )}
+      </div>
+
+      {!movimientos ? <Cargando /> : (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <div className="tarjeta p-4"><p className="text-xs text-slate-500">Ingresos (facturado)</p><p className="text-xl font-bold text-emerald-600">{euros(totalIngresos)}</p></div>
+            <div className="tarjeta p-4"><p className="text-xs text-slate-500">Gastos</p><p className="text-xl font-bold text-red-600">{euros(totalGastos)}</p></div>
+            <div className="tarjeta p-4"><p className="text-xs text-slate-500">Neto del periodo</p><p className="text-xl font-bold text-marino">{euros(totalIngresos - totalGastos)}</p></div>
+          </div>
+          <div className="tarjeta overflow-x-auto">
+            <table className="w-full">
+              <thead><tr><th className="th">Fecha</th><th className="th">Tipo</th><th className="th">Concepto</th><th className="th">Contraparte</th><th className="th">Base</th><th className="th">IVA</th><th className="th">Total</th><th className="th">Cobrado/Pagado</th></tr></thead>
+              <tbody>
+                {movimientos.map((m, i) => (
+                  <tr key={i}>
+                    <td className="td">{fecha(m.fecha)}</td>
+                    <td className="td">{m.tipo === 'INGRESO' ? <span className="text-emerald-600 font-semibold">Ingreso</span> : <span className="text-red-600 font-semibold">Gasto</span>}</td>
+                    <td className="td font-medium">{m.concepto}</td>
+                    <td className="td">{m.contraparte}</td>
+                    <td className="td">{euros(m.baseImponible)}</td>
+                    <td className="td">{euros(m.cuotaIva)}</td>
+                    <td className="td font-semibold">{euros(m.total)}</td>
+                    <td className="td">{m.cobradoOPagado ? '✓' : <span className="text-amber-600">Pendiente</span>}</td>
+                  </tr>
+                ))}
+                {movimientos.length === 0 && <tr><td className="td text-slate-400" colSpan={8}>Sin movimientos en este periodo.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </div>
   );
 }

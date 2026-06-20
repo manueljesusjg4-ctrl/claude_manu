@@ -13,6 +13,7 @@ interface DatosDashboard {
     margenMesEstimado: number; margenAnioEstimado: number;
     costeLaboralMes: number; gastosFijosMes: number;
     obrasActivas: number; trabajadoresActivos: number; enObraHoy: number;
+    fondoManiobra: number; porCobrar: number; porPagar: number;
   };
   alertas: { tipo: string; nivel: 'ROJO' | 'AMBAR'; mensaje: string; enlace: string }[];
   seguimientos: { id: number; fechaPrevista: string; descripcion: string; cliente: { id: number; nombre: string }; vencido: boolean }[];
@@ -20,14 +21,23 @@ interface DatosDashboard {
 
 export function Dashboard() {
   const [datos, setDatos] = useState<DatosDashboard | null>(null);
+  const [margenObras, setMargenObras] = useState<{ obras: { facturado: number; margen: number }[] } | null>(null);
 
   useEffect(() => {
     api.get<DatosDashboard>('/api/dashboard').then(setDatos);
+    api.get('/api/informes/margen-obras').then(setMargenObras);
   }, []);
 
   if (!datos) return <Cargando />;
   const { kpis, caja } = datos;
   const semanasNegativas = caja.semanas.filter((s) => s.negativa).length;
+
+  // Margen bruto en tiempo real: agregado de todas las obras, calculado al
+  // vuelo a partir de los partes de horas y facturas actuales (no es un dato
+  // guardado, así que siempre refleja la situación real de hoy).
+  const facturadoTotal = margenObras?.obras.reduce((s, o) => s + o.facturado, 0) ?? 0;
+  const margenBrutoTotal = margenObras?.obras.reduce((s, o) => s + o.margen, 0) ?? 0;
+  const margenBrutoPorc = facturadoTotal > 0 ? (margenBrutoTotal / facturadoTotal) * 100 : 0;
 
   return (
     <div>
@@ -46,6 +56,18 @@ export function Dashboard() {
         <TarjetaKpi titulo="Obras activas" valor={String(kpis.obrasActivas)} />
         <TarjetaKpi titulo="Trabajadores activos" valor={String(kpis.trabajadoresActivos)} />
         <TarjetaKpi titulo="Hoy en obra" valor={String(kpis.enObraHoy)} />
+        <TarjetaKpi
+          titulo="Margen bruto en tiempo real"
+          valor={`${margenBrutoPorc.toFixed(1)}%`}
+          secundario={`${eurosEnteros(margenBrutoTotal)} sobre lo facturado`}
+          tono={margenBrutoTotal >= 0 ? 'bueno' : 'malo'}
+        />
+        <TarjetaKpi
+          titulo="Fondo de maniobra"
+          valor={eurosEnteros(kpis.fondoManiobra)}
+          secundario={`Por cobrar ${eurosEnteros(kpis.porCobrar)} · por pagar ${eurosEnteros(kpis.porPagar)}`}
+          tono={kpis.fondoManiobra >= 0 ? 'bueno' : 'malo'}
+        />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">

@@ -128,6 +128,50 @@ rutasInformes.get('/coste-laboral', async (_req, res) => {
   });
 });
 
+// Libro auxiliar de ingresos y gastos para enviar a la gestoría (CSV en el
+// cliente). Incluye el desglose de IVA de cada movimiento del periodo.
+rutasInformes.get('/gestoria', async (req, res) => {
+  const desde = req.query.desde ? new Date(String(req.query.desde)) : null;
+  const hasta = req.query.hasta ? new Date(String(req.query.hasta)) : null;
+  const enRango = (f: Date) => (!desde || f >= desde) && (!hasta || f <= hasta);
+
+  const facturas = await prisma.factura.findMany({ include: { cliente: true } });
+  const gastos = await prisma.gasto.findMany({ include: { proveedor: true } });
+
+  const movimientos = [
+    ...facturas
+      .filter((f) => enRango(f.fechaEmision))
+      .map((f) => ({
+        fecha: f.fechaEmision.toISOString().slice(0, 10),
+        tipo: 'INGRESO' as const,
+        concepto: `Factura ${f.numero} — ${f.concepto}`,
+        contraparte: f.cliente.nombre,
+        baseImponible: r2(f.baseImponible),
+        porcentajeIva: f.porcentajeIva,
+        cuotaIva: r2(f.baseImponible * (f.porcentajeIva / 100)),
+        total: r2(f.baseImponible * (1 + f.porcentajeIva / 100)),
+        categoria: 'FACTURACION',
+        cobradoOPagado: f.estado === 'COBRADA',
+      })),
+    ...gastos
+      .filter((g) => enRango(g.fecha))
+      .map((g) => ({
+        fecha: g.fecha.toISOString().slice(0, 10),
+        tipo: 'GASTO' as const,
+        concepto: g.concepto,
+        contraparte: g.proveedor?.nombre || '—',
+        baseImponible: r2(g.importe),
+        porcentajeIva: 0,
+        cuotaIva: 0,
+        total: r2(g.importe),
+        categoria: g.categoria,
+        cobradoOPagado: g.pagado,
+      })),
+  ].sort((a, b) => a.fecha.localeCompare(b.fecha));
+
+  res.json(movimientos);
+});
+
 // Rentabilidad por categoría de trabajador
 rutasInformes.get('/rentabilidad-categorias', async (_req, res) => {
   const { porCategoria } = await economiaPorObra();

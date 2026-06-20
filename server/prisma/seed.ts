@@ -350,6 +350,18 @@ async function main() {
   const ferreteria = await prisma.proveedor.create({
     data: { nombre: 'Suministros Levante', cif: 'B46555444', contacto: 'Mostrador', telefono: '961 77 88 99', plazoPagoDias: 30, notas: 'EPIs, pequeño material y herramienta' },
   });
+  const subcontrataYesos = await prisma.proveedor.create({
+    data: {
+      nombre: 'Yesos y Pladur Pla SL', cif: 'B46222111', contacto: 'Vicente Pla', telefono: '655 11 22 33',
+      plazoPagoDias: 30, esSubcontratista: true, notas: 'Subcontrata de tabiquería y pladur',
+    },
+  });
+  await prisma.documentoProveedor.createMany({
+    data: [
+      { proveedorId: subcontrataYesos.id, tipo: 'REA', nombre: 'Inscripción REA', fechaEmision: dias(-300), fechaCaducidad: dias(20) }, // ¡caduca pronto!
+      { proveedorId: subcontrataYesos.id, tipo: 'CERT_SS', nombre: 'Certificado estar al corriente SS', fechaEmision: dias(-25), fechaCaducidad: dias(65) },
+    ],
+  });
 
   // Gastos fijos de estructura (alimentan el overhead y el flujo de caja)
   await prisma.gasto.createMany({
@@ -363,6 +375,7 @@ async function main() {
       { concepto: 'EPIs renovación (5 trabajadores)', categoria: 'MATERIALES', importe: 240, esRecurrente: false, fecha: dias(-15), proveedorId: ferreteria.id, pagado: true },
       { concepto: 'Material reforma Ruzafa (fontanería)', categoria: 'MATERIALES', importe: 1850, esRecurrente: false, fecha: dias(-12), proveedorId: ferreteria.id, pagado: true, obraId: obraRuzafa.id },
       { concepto: 'Alquiler contenedor escombros Ruzafa', categoria: 'SUBCONTRATA', importe: 380, esRecurrente: false, fecha: dias(10), pagado: false, obraId: obraRuzafa.id },
+      { concepto: 'Tabiquería pladur Ruzafa', categoria: 'SUBCONTRATA', importe: 1450, esRecurrente: false, fecha: dias(5), proveedorId: subcontrataYesos.id, pagado: false, obraId: obraRuzafa.id },
     ],
   });
 

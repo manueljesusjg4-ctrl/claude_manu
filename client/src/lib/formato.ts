@@ -77,6 +77,8 @@ export const ETIQUETAS: Record<string, string> = {
   REA: 'Inscripción REA', RC: 'Póliza Resp. Civil', SPA: 'Contrato SPA',
   CERT_AEAT: 'Certificado AEAT', CERT_SS: 'Certificado Seg. Social',
   ESCRITURA: 'Escritura / CNAE', PODERES: 'Escritura de poderes', TC1_TC2: 'TC1/TC2', CIF: 'CIF',
+  // Documentos de proveedor/subcontratista
+  TC2: 'TC2 (Seg. Social trabajadores)', SEGURO_RC: 'Seguro Resp. Civil', ALTA_AUTONOMO: 'Alta de autónomo',
   // Contratos
   INDEFINIDO: 'Indefinido', FIJO_OBRA: 'Fijo de obra', TEMPORAL: 'Temporal', FIJO_DISCONTINUO: 'Fijo discontinuo',
   // Interacciones

@@ -1,10 +1,21 @@
-// Gastos de empresa (fijos y variables) y proveedores.
+// Gastos de empresa (fijos y variables) y proveedores/subcontratas, con su
+// documentación legal (REA, TC2, certificados...) para evitar riesgo de
+// responsabilidad solidaria (Ley 32/2006 de subcontratación en construcción).
 import { FormEvent, useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { euros, fecha, hoyInput, etiqueta } from '../lib/formato';
-import { Badge, CabeceraPagina, Cargando, Modal, TarjetaKpi } from '../components/ui';
+import { Badge, CabeceraPagina, CampoArchivo, Cargando, COLORES_BADGE, Modal, TarjetaKpi } from '../components/ui';
 
 const CATEGORIAS_GASTO = ['ESTRUCTURA', 'MATERIALES', 'SUBCONTRATA', 'FINANCIERO', 'OTRO'];
+const TIPOS_DOC_PROVEEDOR = ['REA', 'TC2', 'CERT_AEAT', 'CERT_SS', 'SEGURO_RC', 'ALTA_AUTONOMO', 'OTRO'];
+
+const estadoDoc = (d: any) => {
+  if (!d.fechaCaducidad) return 'SIN_CADUCIDAD';
+  const hoy = new Date(); const cad = new Date(d.fechaCaducidad);
+  if (cad < hoy) return 'CADUCADO';
+  if (cad <= new Date(hoy.getTime() + 30 * 86400000)) return 'POR_CADUCAR';
+  return 'VIGENTE';
+};
 
 export function Gastos() {
   const [pestania, setPestania] = useState<'gastos' | 'proveedores'>('gastos');
@@ -108,6 +119,7 @@ function FormGasto({ inicial, proveedores, obras, alGuardar }: { inicial: any; p
 function ListaProveedores() {
   const [proveedores, setProveedores] = useState<any[] | null>(null);
   const [modal, setModal] = useState<any>(null);
+  const [modalDocs, setModalDocs] = useState<any>(null);
   const cargar = () => { api.get('/api/proveedores').then(setProveedores); };
   useEffect(cargar, []);
   if (!proveedores) return <Cargando />;
@@ -116,7 +128,7 @@ function ListaProveedores() {
       <div className="flex justify-end"><button className="boton-primario" onClick={() => setModal({})}>+ Nuevo proveedor</button></div>
       <div className="tarjeta overflow-x-auto">
         <table className="w-full">
-          <thead><tr><th className="th">Nombre</th><th className="th">CIF</th><th className="th">Contacto</th><th className="th">Teléfono</th><th className="th">Plazo pago</th><th className="th"></th></tr></thead>
+          <thead><tr><th className="th">Nombre</th><th className="th">CIF</th><th className="th">Contacto</th><th className="th">Teléfono</th><th className="th">Plazo pago</th><th className="th">Tipo</th><th className="th"></th></tr></thead>
           <tbody>
             {proveedores.map((p) => (
               <tr key={p.id}>
@@ -125,7 +137,18 @@ function ListaProveedores() {
                 <td className="td">{p.contacto || '—'}</td>
                 <td className="td">{p.telefono || '—'}</td>
                 <td className="td">{p.plazoPagoDias} días</td>
-                <td className="td"><div className="flex gap-1"><button className="text-xs text-acento" onClick={() => setModal(p)}>Editar</button><button className="text-xs text-slate-300 hover:text-red-500" onClick={async () => { await api.del(`/api/proveedores/${p.id}`); cargar(); }}>✕</button></div></td>
+                <td className="td">
+                  {p.esSubcontratista
+                    ? <Badge texto={`Subcontrata${p.documentos?.length ? ` (${p.documentos.length} doc.)` : ''}`} color="bg-violet-100 text-violet-700" />
+                    : <span className="text-xs text-slate-400">Proveedor</span>}
+                </td>
+                <td className="td">
+                  <div className="flex gap-1">
+                    {p.esSubcontratista && <button className="text-xs text-acento" onClick={() => setModalDocs(p)}>Documentación</button>}
+                    <button className="text-xs text-acento" onClick={() => setModal(p)}>Editar</button>
+                    <button className="text-xs text-slate-300 hover:text-red-500" onClick={async () => { await api.del(`/api/proveedores/${p.id}`); cargar(); }}>✕</button>
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -134,6 +157,14 @@ function ListaProveedores() {
       <Modal titulo={modal?.id ? 'Editar proveedor' : 'Nuevo proveedor'} abierto={!!modal} alCerrar={() => setModal(null)} ancho="max-w-md">
         {modal && <FormProveedor inicial={modal} alGuardar={async (d) => { if (modal.id) await api.put(`/api/proveedores/${modal.id}`, d); else await api.post('/api/proveedores', d); setModal(null); cargar(); }} />}
       </Modal>
+      <Modal titulo={`Documentación — ${modalDocs?.nombre || ''}`} abierto={!!modalDocs} alCerrar={() => setModalDocs(null)} ancho="max-w-lg">
+        {modalDocs && (
+          <DocumentosProveedor
+            proveedor={modalDocs}
+            alCambiar={(actualizado) => { setModalDocs(actualizado); cargar(); }}
+          />
+        )}
+      </Modal>
     </div>
   );
 }
@@ -141,7 +172,8 @@ function ListaProveedores() {
 function FormProveedor({ inicial, alGuardar }: { inicial: any; alGuardar: (d: any) => void }) {
   const [p, setP] = useState({
     nombre: inicial.nombre || '', cif: inicial.cif || '', contacto: inicial.contacto || '',
-    telefono: inicial.telefono || '', email: inicial.email || '', plazoPagoDias: inicial.plazoPagoDias || 30, notas: inicial.notas || '',
+    telefono: inicial.telefono || '', email: inicial.email || '', plazoPagoDias: inicial.plazoPagoDias || 30,
+    esSubcontratista: inicial.esSubcontratista || false, notas: inicial.notas || '',
   });
   return (
     <form onSubmit={(e: FormEvent) => { e.preventDefault(); alGuardar(p); }} className="grid grid-cols-2 gap-3">
@@ -151,7 +183,83 @@ function FormProveedor({ inicial, alGuardar }: { inicial: any; alGuardar: (d: an
       <div><label className="etiqueta">Teléfono</label><input className="campo" value={p.telefono} onChange={(e) => setP({ ...p, telefono: e.target.value })} /></div>
       <div><label className="etiqueta">Email</label><input className="campo" value={p.email} onChange={(e) => setP({ ...p, email: e.target.value })} /></div>
       <div><label className="etiqueta">Plazo de pago (días)</label><input type="number" className="campo" value={p.plazoPagoDias} onChange={(e) => setP({ ...p, plazoPagoDias: Number(e.target.value) })} /></div>
+      <label className="col-span-2 flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={p.esSubcontratista} onChange={(e) => setP({ ...p, esSubcontratista: e.target.checked })} />
+        Es subcontratista/autónomo (requiere documentación: REA, TC2, certificados...)
+      </label>
       <div className="col-span-2 flex justify-end"><button className="boton-primario">Guardar</button></div>
+    </form>
+  );
+}
+
+function DocumentosProveedor({ proveedor, alCambiar }: { proveedor: any; alCambiar: (p: any) => void }) {
+  const [modalDoc, setModalDoc] = useState<any>(null);
+  const documentos = proveedor.documentos || [];
+
+  const recargar = async () => {
+    const lista = await api.get<any[]>('/api/proveedores');
+    const actualizado = lista.find((p) => p.id === proveedor.id);
+    if (actualizado) alCambiar(actualizado);
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex justify-end"><button className="boton-secundario text-xs" onClick={() => setModalDoc({})}>+ Documento</button></div>
+      <div className="space-y-2">
+        {documentos.map((d: any) => {
+          const est = estadoDoc(d);
+          return (
+            <div key={d.id} className="flex items-center justify-between text-sm border border-slate-200 rounded-lg p-2.5">
+              <div>
+                <p className="font-medium">{etiqueta(d.tipo)}</p>
+                <p className="text-xs text-slate-500">{d.nombre}{d.fechaCaducidad ? ` · caduca ${fecha(d.fechaCaducidad)}` : ''}</p>
+                {d.archivoUrl && <a href={d.archivoUrl} target="_blank" rel="noreferrer" className="text-xs text-acento">Ver archivo →</a>}
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge texto={est === 'SIN_CADUCIDAD' ? 'Sin caducidad' : est === 'VIGENTE' ? 'Vigente' : est === 'POR_CADUCAR' ? 'Por caducar' : 'Caducado'} color={COLORES_BADGE[est]} />
+                <button className="text-xs text-acento" onClick={() => setModalDoc(d)}>Editar</button>
+                <button className="text-xs text-slate-300 hover:text-red-500" onClick={async () => { await api.del(`/api/proveedores/documentos/${d.id}`); recargar(); }}>✕</button>
+              </div>
+            </div>
+          );
+        })}
+        {documentos.length === 0 && <p className="text-sm text-slate-400">Sin documentos. Recomendado: inscripción REA, TC2 y certificados de estar al corriente (SS/AEAT) antes de subcontratar.</p>}
+      </div>
+
+      <Modal titulo={modalDoc?.id ? 'Editar documento' : 'Añadir documento'} abierto={!!modalDoc} alCerrar={() => setModalDoc(null)} ancho="max-w-md">
+        {modalDoc && (
+          <FormDocProveedor
+            inicial={modalDoc}
+            alGuardar={async (d) => {
+              if (modalDoc.id) await api.put(`/api/proveedores/documentos/${modalDoc.id}`, d);
+              else await api.post(`/api/proveedores/${proveedor.id}/documentos`, d);
+              setModalDoc(null);
+              recargar();
+            }}
+          />
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+function FormDocProveedor({ inicial, alGuardar }: { inicial: any; alGuardar: (d: any) => void }) {
+  const [d, setD] = useState({
+    tipo: inicial.tipo || 'REA', nombre: inicial.nombre || '',
+    fechaEmision: inicial.fechaEmision ? inicial.fechaEmision.slice(0, 10) : hoyInput(),
+    fechaCaducidad: inicial.fechaCaducidad ? inicial.fechaCaducidad.slice(0, 10) : '',
+    archivoUrl: inicial.archivoUrl || '',
+  });
+  return (
+    <form onSubmit={(e: FormEvent) => { e.preventDefault(); alGuardar(d); }} className="space-y-3">
+      <div><label className="etiqueta">Tipo *</label><select className="campo" value={d.tipo} onChange={(e) => setD({ ...d, tipo: e.target.value })}>{TIPOS_DOC_PROVEEDOR.map((t) => <option key={t} value={t}>{etiqueta(t)}</option>)}</select></div>
+      <div><label className="etiqueta">Nombre / descripción *</label><input required className="campo" value={d.nombre} onChange={(e) => setD({ ...d, nombre: e.target.value })} /></div>
+      <div className="grid grid-cols-2 gap-3">
+        <div><label className="etiqueta">Emisión</label><input type="date" className="campo" value={d.fechaEmision} onChange={(e) => setD({ ...d, fechaEmision: e.target.value })} /></div>
+        <div><label className="etiqueta">Caducidad</label><input type="date" className="campo" value={d.fechaCaducidad} onChange={(e) => setD({ ...d, fechaCaducidad: e.target.value })} /></div>
+      </div>
+      <CampoArchivo valor={d.archivoUrl} alCambiar={(url) => setD({ ...d, archivoUrl: url })} />
+      <div className="flex justify-end"><button className="boton-primario">Guardar</button></div>
     </form>
   );
 }

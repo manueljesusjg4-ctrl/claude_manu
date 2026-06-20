@@ -61,7 +61,7 @@ export function ObraFicha() {
   };
 
   const descargarPdfPartes = () => {
-    window.open(`/api/obras/${id}/partes/pdf`, '_blank');
+    api.descargar(`/api/obras/${id}/partes/pdf`, `partes-${o.nombre.replace(/\s+/g, '_')}.pdf`);
   };
 
   const anadirOrden = async (directriz: string) => {

@@ -53,6 +53,10 @@ model Configuracion {
   plazoCobroDefecto         Int   @default(60)
   // IVA por defecto
   porcentajeIva             Float @default(21)
+  // Aviso de sobrecoste laboral: si el coste/hora real de un trabajador
+  // asignado supera su precio de venta/hora pactado en más de esto, se avisa
+  // en el dashboard. Editable porque los márgenes y tarifas cambian con el tiempo.
+  umbralSobrecosteHora      Float @default(15)
   // Parte del coste empresa mensual que corresponde a la Seguridad Social a
   // cargo de la empresa (se paga el último día del mes SIGUIENTE al devengo)
   porcentajeSeguridadSocial Float @default(31.5)
@@ -310,15 +314,35 @@ model Anticipo {
 // Gastos y proveedores
 // ----------------------------------------------------------------------------
 model Proveedor {
-  id            Int     @id @default(autoincrement())
-  nombre        String
-  cif           String?
-  contacto      String?
-  telefono      String?
-  email         String?
-  plazoPagoDias Int     @default(30)
-  notas         String?
-  gastos        Gasto[]
+  id               Int                 @id @default(autoincrement())
+  nombre           String
+  cif              String?
+  contacto         String?
+  telefono         String?
+  email            String?
+  plazoPagoDias    Int                 @default(30)
+  // Marca a los terceros que aportan mano de obra (subcontratas, autónomos),
+  // distintos de los proveedores de materiales: requieren control documental
+  // (REA, TC2, seguro RC...) para evitar responsabilidad solidaria.
+  esSubcontratista Boolean             @default(false)
+  notas            String?
+  gastos           Gasto[]
+  documentos       DocumentoProveedor[]
+}
+
+// Documentación legal de subcontratas/autónomos (REA, estar al corriente con
+// AEAT/SS, seguro RC...), con caducidades igual que la de empresa/trabajadores.
+model DocumentoProveedor {
+  id             Int       @id @default(autoincrement())
+  proveedorId    Int
+  proveedor      Proveedor @relation(fields: [proveedorId], references: [id], onDelete: Cascade)
+  // REA | TC2 | CERT_AEAT | CERT_SS | SEGURO_RC | ALTA_AUTONOMO | OTRO
+  tipo           String
+  nombre         String
+  fechaEmision   DateTime?
+  fechaCaducidad DateTime?
+  archivoUrl     String?
+  notas          String?
 }
 
 model Gasto {
