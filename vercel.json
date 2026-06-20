@@ -7,7 +7,7 @@
   "routes": [
     { "src": "/api/(.*)", "dest": "server/api/index.ts" },
     { "src": "/uploads/(.*)", "dest": "server/api/index.ts" },
-    { "src": "/(.*\\.[a-zA-Z0-9]+)$", "dest": "client/dist/$1" },
-    { "src": "/(.*)", "dest": "client/dist/index.html" }
+    { "src": "/(.*\\.[a-zA-Z0-9]+)$", "dest": "client/$1" },
+    { "src": "/(.*)", "dest": "client/index.html" }
   ]
 }
