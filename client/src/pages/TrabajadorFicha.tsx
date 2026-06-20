@@ -17,6 +17,7 @@ export function TrabajadorFicha() {
   const [modalEditar, setModalEditar] = useState(false);
   const [modalDoc, setModalDoc] = useState<any>(null);
   const [modalEpi, setModalEpi] = useState(false);
+  const [epiEditar, setEpiEditar] = useState<any>(null);
   const [modalLlamamiento, setModalLlamamiento] = useState(false);
 
   const cargar = () => api.get(`/api/trabajadores/${id}`).then(setT);
@@ -129,7 +130,10 @@ export function TrabajadorFicha() {
                   <p className="text-xs text-slate-500">{fecha(e.fecha)} · {e.riesgosLeidos ? 'Riesgos PRL informados' : 'Sin confirmar riesgos PRL'}</p>
                   {e.firmaUrl && <img src={e.firmaUrl} alt="Firma" className="h-10 mt-1 border border-slate-100 rounded bg-white" />}
                 </div>
-                <button className="text-xs text-slate-300 hover:text-red-500 shrink-0" onClick={async () => { await api.del(`/api/trabajadores/epis/${e.id}`); cargar(); }}>✕</button>
+                <div className="flex gap-2 shrink-0">
+                  <button className="text-xs text-slate-400 hover:text-marino" title="Editar entrega" onClick={() => setEpiEditar(e)}>✎</button>
+                  <button className="text-xs text-slate-300 hover:text-red-500" title="Eliminar entrega" onClick={async () => { if (confirm('¿Eliminar esta entrega de EPIs?')) { await api.del(`/api/trabajadores/epis/${e.id}`); cargar(); } }}>✕</button>
+                </div>
               </div>
             ))}
             {t.entregasEpi.length === 0 && <p className="text-sm text-slate-400">Sin entregas registradas.</p>}
@@ -201,6 +205,12 @@ export function TrabajadorFicha() {
         <FormEpi alGuardar={async (d) => { await api.post(`/api/trabajadores/${id}/epis`, d); setModalEpi(false); cargar(); }} />
       </Modal>
 
+      <Modal titulo="Editar entrega de EPIs / PRL" abierto={!!epiEditar} alCerrar={() => setEpiEditar(null)} ancho="max-w-md">
+        {epiEditar && (
+          <FormEpi inicial={epiEditar} alGuardar={async (d) => { await api.put(`/api/trabajadores/epis/${epiEditar.id}`, d); setEpiEditar(null); cargar(); }} />
+        )}
+      </Modal>
+
       <Modal titulo="Nuevo llamamiento" abierto={modalLlamamiento} alCerrar={() => setModalLlamamiento(false)} ancho="max-w-md">
         <FormLlamamiento alGuardar={async (d) => { await api.post(`/api/trabajadores/${id}/llamamientos`, d); setModalLlamamiento(false); cargar(); }} />
       </Modal>
@@ -229,8 +239,10 @@ function FormDoc({ inicial, alGuardar }: { inicial: any; alGuardar: (d: any) => 
   );
 }
 
-function FormEpi({ alGuardar }: { alGuardar: (d: any) => void }) {
-  const [d, setD] = useState({ fecha: hoyInput(), items: '', riesgosLeidos: false, firmaUrl: '', notas: '' });
+function FormEpi({ inicial, alGuardar }: { inicial?: any; alGuardar: (d: any) => void }) {
+  const [d, setD] = useState(inicial
+    ? { fecha: fechaInput(inicial.fecha), items: inicial.items, riesgosLeidos: inicial.riesgosLeidos, firmaUrl: inicial.firmaUrl || '', notas: inicial.notas || '' }
+    : { fecha: hoyInput(), items: '', riesgosLeidos: false, firmaUrl: '', notas: '' });
   return (
     <form onSubmit={(e: FormEvent) => { e.preventDefault(); alGuardar(d); }} className="space-y-3">
       <div><label className="etiqueta">Fecha *</label><input type="date" required className="campo" value={d.fecha} onChange={(e) => setD({ ...d, fecha: e.target.value })} /></div>
@@ -241,8 +253,9 @@ function FormEpi({ alGuardar }: { alGuardar: (d: any) => void }) {
       </label>
       <div>
         <label className="etiqueta">Firma del trabajador</label>
+        {d.firmaUrl && <img src={d.firmaUrl} alt="Firma actual" className="h-12 mb-1 border border-slate-100 rounded bg-white" />}
         <PadFirma alFirmar={(url) => setD({ ...d, firmaUrl: url })} />
-        {d.firmaUrl && <p className="text-xs text-emerald-600 mt-1">✓ Firma guardada</p>}
+        {d.firmaUrl && <p className="text-xs text-emerald-600 mt-1">✓ Firma guardada{inicial ? ' (vuelve a firmar arriba solo si quieres sustituirla)' : ''}</p>}
       </div>
       <div><label className="etiqueta">Notas</label><input className="campo" value={d.notas} onChange={(e) => setD({ ...d, notas: e.target.value })} /></div>
       <div className="flex justify-end"><button className="boton-primario">Guardar</button></div>

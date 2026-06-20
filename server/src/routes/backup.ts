@@ -4,9 +4,12 @@ import { prisma } from '../lib/prisma';
 
 export const rutasBackup = Router();
 
-// Orden de inserción que respeta las claves ajenas
+// Tablas de datos del negocio, en orden de inserción que respeta las claves
+// ajenas. La tabla "usuario" se excluye a propósito: contiene los hashes de
+// las contraseñas (no debe salir en un archivo descargable) y no debe borrarse
+// al restaurar, para no dejar a los socios sin acceso.
 const TABLAS = [
-  'usuario', 'configuracion', 'trabajador', 'documentoTrabajador',
+  'configuracion', 'trabajador', 'documentoTrabajador',
   'cliente', 'interaccion', 'seguimiento', 'obra', 'asignacion', 'parteHoras',
   'factura', 'anticipo', 'proveedor', 'gasto', 'tarifaCategoria',
   'presupuesto', 'lineaPresupuesto', 'documentoEmpresa', 'envioPack',
@@ -24,20 +27,26 @@ rutasBackup.get('/exportar', async (_req, res) => {
 
 rutasBackup.post('/importar', async (req, res) => {
   const { datos } = req.body || {};
-  if (!datos) return res.status(400).json({ error: 'Archivo de backup no válido' });
+  if (!datos || typeof datos !== 'object') {
+    return res.status(400).json({ error: 'Archivo de copia de seguridad no válido' });
+  }
   try {
-    // Vaciar en orden inverso y reinsertar en orden directo
-    for (const tabla of [...TABLAS].reverse()) {
-      await (prisma as any)[tabla].deleteMany();
-    }
-    for (const tabla of TABLAS) {
-      const filas = datos[tabla] || [];
-      for (const fila of filas) {
-        await (prisma as any)[tabla].create({ data: fila });
+    // Todo dentro de una única transacción: si algo falla a mitad, NO se borra
+    // nada y los datos actuales quedan intactos (no se puede perder la base
+    // de datos por un archivo corrupto).
+    await prisma.$transaction(async (tx) => {
+      for (const tabla of [...TABLAS].reverse()) {
+        await (tx as any)[tabla].deleteMany();
       }
-    }
+      for (const tabla of TABLAS) {
+        const filas = datos[tabla] || [];
+        for (const fila of filas) {
+          await (tx as any)[tabla].create({ data: fila });
+        }
+      }
+    }, { timeout: 120000 });
     res.json({ ok: true, mensaje: 'Copia de seguridad restaurada correctamente' });
   } catch (e: any) {
-    res.status(500).json({ error: `Error al restaurar: ${e.message}` });
+    res.status(500).json({ error: `No se ha restaurado nada (los datos actuales siguen intactos). Detalle: ${e.message}` });
   }
 });

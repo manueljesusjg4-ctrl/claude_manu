@@ -189,6 +189,21 @@ rutasTrabajadores.post('/:id/epis', async (req, res) => {
   res.status(201).json(e);
 });
 
+rutasTrabajadores.put('/epis/:eid', async (req, res) => {
+  const d = req.body;
+  const e = await prisma.entregaEpi.update({
+    where: { id: Number(req.params.eid) },
+    data: {
+      fecha: new Date(d.fecha),
+      items: d.items,
+      riesgosLeidos: Boolean(d.riesgosLeidos),
+      firmaUrl: d.firmaUrl || null,
+      notas: d.notas || null,
+    },
+  });
+  res.json(e);
+});
+
 rutasTrabajadores.delete('/epis/:eid', async (req, res) => {
   await prisma.entregaEpi.delete({ where: { id: Number(req.params.eid) } });
   res.json({ ok: true });

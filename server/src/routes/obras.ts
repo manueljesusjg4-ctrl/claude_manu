@@ -298,6 +298,20 @@ rutasObras.post('/:id/partes', async (req, res) => {
   res.status(201).json(p);
 });
 
+rutasObras.put('/partes/:pid', async (req, res) => {
+  const d = req.body;
+  const p = await prisma.parteHoras.update({
+    where: { id: Number(req.params.pid) },
+    data: {
+      trabajadorId: Number(d.trabajadorId),
+      fecha: new Date(d.fecha),
+      horas: Number(d.horas),
+      notas: d.notas || null,
+    },
+  });
+  res.json(p);
+});
+
 rutasObras.delete('/partes/:pid', async (req, res) => {
   await prisma.parteHoras.delete({ where: { id: Number(req.params.pid) } });
   res.json({ ok: true });

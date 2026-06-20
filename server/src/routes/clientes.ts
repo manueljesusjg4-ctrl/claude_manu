@@ -144,6 +144,20 @@ rutasClientes.post('/:id/interacciones', async (req, res) => {
   res.status(201).json(i);
 });
 
+rutasClientes.put('/interacciones/:iid', async (req, res) => {
+  const d = req.body;
+  const i = await prisma.interaccion.update({
+    where: { id: Number(req.params.iid) },
+    data: {
+      fecha: new Date(d.fecha),
+      tipo: d.tipo,
+      resumen: d.resumen,
+      resultado: d.resultado || null,
+    },
+  });
+  res.json(i);
+});
+
 rutasClientes.delete('/interacciones/:iid', async (req, res) => {
   await prisma.interaccion.delete({ where: { id: Number(req.params.iid) } });
   res.json({ ok: true });

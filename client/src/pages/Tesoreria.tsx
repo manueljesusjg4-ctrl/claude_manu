@@ -141,6 +141,7 @@ function Cobros() {
   const [clientes, setClientes] = useState<any[]>([]);
   const [obras, setObras] = useState<any[]>([]);
   const [modalNueva, setModalNueva] = useState(false);
+  const [modalEditar, setModalEditar] = useState<any>(null);
   const [modalConfirming, setModalConfirming] = useState<any>(null);
   const [error, setError] = useState('');
 
@@ -221,6 +222,9 @@ function Cobros() {
                     <button className="text-xs font-semibold text-emerald-700 hover:underline text-left" onClick={() => marcarCobrada(f)}>
                       {f.estado === 'COBRADA' ? 'Deshacer cobro' : '✓ Marcar cobrada'}
                     </button>
+                    <button className="text-xs font-semibold text-marino hover:underline text-left" onClick={() => setModalEditar(f)}>
+                      ✎ Editar
+                    </button>
                     {f.estado !== 'COBRADA' && (
                       <button className="text-xs font-semibold text-blue-700 hover:underline text-left" onClick={() => setModalConfirming(f)}>
                         🏦 Confirming
@@ -255,6 +259,27 @@ function Cobros() {
         />
       </Modal>
 
+      {/* Modal editar factura */}
+      <Modal titulo={`Editar factura ${modalEditar?.numero}`} abierto={!!modalEditar} alCerrar={() => setModalEditar(null)}>
+        {modalEditar && (
+          <FormularioFactura
+            clientes={clientes}
+            obras={obras}
+            inicial={modalEditar}
+            alGuardar={async (datos) => {
+              try {
+                await api.put(`/api/facturas/${modalEditar.id}`, datos);
+                setModalEditar(null);
+                setError('');
+                cargar();
+              } catch (e: any) {
+                setError(e.message);
+              }
+            }}
+          />
+        )}
+      </Modal>
+
       {/* Modal confirming */}
       <Modal titulo={`Anticipar factura ${modalConfirming?.numero} (confirming)`} abierto={!!modalConfirming} alCerrar={() => setModalConfirming(null)} ancho="max-w-md">
         {modalConfirming && (
@@ -272,34 +297,52 @@ function Cobros() {
   );
 }
 
-function FormularioFactura({ clientes, obras, alGuardar }: { clientes: any[]; obras: any[]; alGuardar: (d: any) => void }) {
-  const [f, setF] = useState<any>({
-    numero: '', clienteId: '', obraId: '', concepto: '', fechaEmision: hoyInput(),
-    baseImponible: '', porcentajeIva: 21, plazoDias: '', aplicarAnticipos: true,
-  });
+function FormularioFactura({ clientes, obras, inicial, alGuardar }: { clientes: any[]; obras: any[]; inicial?: any; alGuardar: (d: any) => void }) {
+  const edicion = !!inicial;
+  const [f, setF] = useState<any>(inicial
+    ? {
+        numero: inicial.numero, clienteId: String(inicial.clienteId), obraId: inicial.obraId ? String(inicial.obraId) : '',
+        concepto: inicial.concepto, fechaEmision: fechaInput(inicial.fechaEmision),
+        baseImponible: inicial.baseImponible, porcentajeIva: inicial.porcentajeIva, plazoDias: inicial.plazoDias,
+        fechaCobroEsperada: fechaInput(inicial.fechaCobroEsperada), aplicarAnticipos: false,
+      }
+    : {
+        numero: '', clienteId: '', obraId: '', concepto: '', fechaEmision: hoyInput(),
+        baseImponible: '', porcentajeIva: 21, plazoDias: '', aplicarAnticipos: true,
+      });
   const cliente = clientes.find((c) => c.id === Number(f.clienteId));
   const enviar = (e: FormEvent) => {
     e.preventDefault();
-    alGuardar({ ...f, plazoDias: f.plazoDias === '' ? undefined : Number(f.plazoDias), obraId: f.obraId || null });
+    if (edicion) {
+      alGuardar({
+        numero: f.numero, concepto: f.concepto, fechaEmision: f.fechaEmision,
+        baseImponible: Number(f.baseImponible), porcentajeIva: Number(f.porcentajeIva),
+        plazoDias: Number(f.plazoDias), fechaCobroEsperada: f.fechaCobroEsperada,
+      });
+    } else {
+      alGuardar({ ...f, plazoDias: f.plazoDias === '' ? undefined : Number(f.plazoDias), obraId: f.obraId || null });
+    }
   };
   return (
     <form onSubmit={enviar} className="grid grid-cols-2 gap-3">
       <div><label className="etiqueta">Número *</label><input required className="campo" value={f.numero} onChange={(e) => setF({ ...f, numero: e.target.value })} placeholder="C-2026-004" /></div>
       <div>
         <label className="etiqueta">Cliente *</label>
-        <select required className="campo" value={f.clienteId} onChange={(e) => setF({ ...f, clienteId: e.target.value })}>
+        <select required disabled={edicion} className="campo disabled:bg-slate-100 disabled:text-slate-500" value={f.clienteId} onChange={(e) => setF({ ...f, clienteId: e.target.value })}>
           <option value="">— Elegir —</option>
           {clientes.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
         </select>
       </div>
       <div className="col-span-2"><label className="etiqueta">Concepto *</label><input required className="campo" value={f.concepto} onChange={(e) => setF({ ...f, concepto: e.target.value })} /></div>
-      <div>
-        <label className="etiqueta">Obra (opcional)</label>
-        <select className="campo" value={f.obraId} onChange={(e) => setF({ ...f, obraId: e.target.value })}>
-          <option value="">— Sin obra —</option>
-          {obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-        </select>
-      </div>
+      {!edicion && (
+        <div>
+          <label className="etiqueta">Obra (opcional)</label>
+          <select className="campo" value={f.obraId} onChange={(e) => setF({ ...f, obraId: e.target.value })}>
+            <option value="">— Sin obra —</option>
+            {obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+          </select>
+        </div>
+      )}
       <div><label className="etiqueta">Fecha emisión *</label><input required type="date" className="campo" value={f.fechaEmision} onChange={(e) => setF({ ...f, fechaEmision: e.target.value })} /></div>
       <div><label className="etiqueta">Base imponible (€) *</label><input required type="number" step="0.01" className="campo" value={f.baseImponible} onChange={(e) => setF({ ...f, baseImponible: e.target.value })} /></div>
       <div><label className="etiqueta">IVA (%)</label><input type="number" step="0.1" className="campo" value={f.porcentajeIva} onChange={(e) => setF({ ...f, porcentajeIva: e.target.value })} /></div>
@@ -308,11 +351,16 @@ function FormularioFactura({ clientes, obras, alGuardar }: { clientes: any[]; ob
         <input type="number" className="campo" value={f.plazoDias} onChange={(e) => setF({ ...f, plazoDias: e.target.value })}
           placeholder={cliente ? `${cliente.plazoPagoDias} (del cliente)` : 'según cliente'} />
       </div>
-      <label className="col-span-2 flex items-center gap-2 text-sm text-slate-600">
-        <input type="checkbox" checked={f.aplicarAnticipos} onChange={(e) => setF({ ...f, aplicarAnticipos: e.target.checked })} />
-        Descontar automáticamente los anticipos pendientes de este cliente
-      </label>
-      <div className="col-span-2 flex justify-end"><button className="boton-primario">Guardar factura</button></div>
+      {edicion && (
+        <div><label className="etiqueta">Cobro esperado *</label><input required type="date" className="campo" value={f.fechaCobroEsperada} onChange={(e) => setF({ ...f, fechaCobroEsperada: e.target.value })} /></div>
+      )}
+      {!edicion && (
+        <label className="col-span-2 flex items-center gap-2 text-sm text-slate-600">
+          <input type="checkbox" checked={f.aplicarAnticipos} onChange={(e) => setF({ ...f, aplicarAnticipos: e.target.checked })} />
+          Descontar automáticamente los anticipos pendientes de este cliente
+        </label>
+      )}
+      <div className="col-span-2 flex justify-end"><button className="boton-primario">{edicion ? 'Guardar cambios' : 'Guardar factura'}</button></div>
     </form>
   );
 }
@@ -349,7 +397,9 @@ function Anticipos() {
   const [clientes, setClientes] = useState<any[]>([]);
   const [obras, setObras] = useState<any[]>([]);
   const [modal, setModal] = useState(false);
-  const [d, setD] = useState<any>({ clienteId: '', obraId: '', fecha: hoyInput(), importe: '', notas: '' });
+  const [editarId, setEditarId] = useState<number | null>(null);
+  const vacio = { clienteId: '', obraId: '', fecha: hoyInput(), importe: '', notas: '' };
+  const [d, setD] = useState<any>(vacio);
 
   const cargar = () => {
     api.get('/api/facturas/anticipos').then(setAnticipos);
@@ -359,13 +409,20 @@ function Anticipos() {
   useEffect(cargar, []);
   if (!anticipos) return <Cargando />;
 
+  const abrirNuevo = () => { setEditarId(null); setD(vacio); setModal(true); };
+  const abrirEditar = (a: any) => {
+    setEditarId(a.id);
+    setD({ clienteId: String(a.clienteId), obraId: a.obraId ? String(a.obraId) : '', fecha: fechaInput(a.fecha), importe: a.importe, notas: a.notas || '' });
+    setModal(true);
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <p className="text-sm text-slate-600">
           Anticipos a cuenta de clientes. Al crear una factura del mismo cliente se descuentan automáticamente.
         </p>
-        <button className="boton-primario" onClick={() => setModal(true)}>+ Registrar anticipo</button>
+        <button className="boton-primario" onClick={abrirNuevo}>+ Registrar anticipo</button>
       </div>
       <div className="tarjeta overflow-x-auto">
         <table className="w-full">
@@ -379,7 +436,12 @@ function Anticipos() {
                 <td className="td font-semibold">{euros(a.importe)}</td>
                 <td className="td">{euros(a.importeAplicado)}</td>
                 <td className="td font-bold text-violet-700">{euros(a.importe - a.importeAplicado)}</td>
-                <td className="td"><button className="boton-peligro" onClick={async () => { if (confirm('¿Eliminar anticipo?')) { await api.del(`/api/facturas/anticipos/${a.id}`); cargar(); } }}>Eliminar</button></td>
+                <td className="td">
+                  <div className="flex gap-3">
+                    <button className="text-xs font-semibold text-marino hover:underline" onClick={() => abrirEditar(a)}>✎ Editar</button>
+                    <button className="text-xs font-semibold text-red-600 hover:underline" onClick={async () => { if (confirm('¿Eliminar anticipo?')) { await api.del(`/api/facturas/anticipos/${a.id}`); cargar(); } }}>✕ Eliminar</button>
+                  </div>
+                </td>
               </tr>
             ))}
             {anticipos.length === 0 && <tr><td className="td text-slate-400" colSpan={7}>No hay anticipos registrados.</td></tr>}
@@ -387,13 +449,15 @@ function Anticipos() {
         </table>
       </div>
 
-      <Modal titulo="Registrar anticipo de cliente" abierto={modal} alCerrar={() => setModal(false)} ancho="max-w-md">
+      <Modal titulo={editarId ? 'Editar anticipo de cliente' : 'Registrar anticipo de cliente'} abierto={modal} alCerrar={() => setModal(false)} ancho="max-w-md">
         <form
           onSubmit={async (e) => {
             e.preventDefault();
-            await api.post('/api/facturas/anticipos', { ...d, obraId: d.obraId || null });
+            const cuerpo = { ...d, obraId: d.obraId || null };
+            if (editarId) await api.put(`/api/facturas/anticipos/${editarId}`, cuerpo);
+            else await api.post('/api/facturas/anticipos', cuerpo);
             setModal(false);
-            setD({ clienteId: '', obraId: '', fecha: hoyInput(), importe: '', notas: '' });
+            setD(vacio);
             cargar();
           }}
           className="space-y-3"

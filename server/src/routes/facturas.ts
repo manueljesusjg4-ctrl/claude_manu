@@ -170,6 +170,21 @@ rutasFacturas.post('/anticipos', async (req, res) => {
   res.status(201).json(a);
 });
 
+rutasFacturas.put('/anticipos/:aid', async (req, res) => {
+  const d = req.body;
+  const a = await prisma.anticipo.update({
+    where: { id: Number(req.params.aid) },
+    data: {
+      clienteId: Number(d.clienteId),
+      obraId: d.obraId ? Number(d.obraId) : null,
+      fecha: new Date(d.fecha),
+      importe: Number(d.importe),
+      notas: d.notas || null,
+    },
+  });
+  res.json(a);
+});
+
 rutasFacturas.delete('/anticipos/:aid', async (req, res) => {
   await prisma.anticipo.delete({ where: { id: Number(req.params.aid) } });
   res.json({ ok: true });

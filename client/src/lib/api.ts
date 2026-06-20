@@ -5,6 +5,18 @@ export function registrarCierreSesion(fn: () => void) {
   alCaducarSesion = fn;
 }
 
+// Avisos visibles (toasts) para informar de errores o confirmaciones desde
+// cualquier punto de la app, incluso cuando una llamada falla sin que la
+// pantalla lo capture (así nunca se queda "Cargando…" para siempre en silencio).
+type TipoAviso = 'error' | 'ok';
+let mostrarAviso: (mensaje: string, tipo?: TipoAviso) => void = () => {};
+export function registrarAvisador(fn: (mensaje: string, tipo?: TipoAviso) => void) {
+  mostrarAviso = fn;
+}
+export function avisar(mensaje: string, tipo: TipoAviso = 'error') {
+  mostrarAviso(mensaje, tipo);
+}
+
 export class ErrorApi extends Error {
   requiereConfirmacion: boolean;
   constructor(mensaje: string, requiereConfirmacion = false) {

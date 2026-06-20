@@ -1,7 +1,33 @@
 // Componentes pequeños reutilizables de la interfaz.
-import { ChangeEvent, ReactNode, useState } from 'react';
-import { api } from '../lib/api';
+import { ChangeEvent, ReactNode, useEffect, useState } from 'react';
+import { api, registrarAvisador } from '../lib/api';
 import { euros, porcentaje } from '../lib/formato';
+
+/** Avisos flotantes (toasts). Se monta una sola vez en la app y muestra los
+ * mensajes que cualquier parte de la app lance con avisar(). */
+export function Notificaciones() {
+  const [avisos, setAvisos] = useState<{ id: number; mensaje: string; tipo: 'error' | 'ok' }[]>([]);
+  useEffect(() => {
+    registrarAvisador((mensaje, tipo = 'error') => {
+      const id = Date.now() + Math.random();
+      setAvisos((a) => [...a, { id, mensaje, tipo }]);
+      setTimeout(() => setAvisos((a) => a.filter((x) => x.id !== id)), 6000);
+    });
+  }, []);
+  return (
+    <div className="fixed bottom-4 right-4 z-[100] space-y-2 max-w-sm">
+      {avisos.map((a) => (
+        <div
+          key={a.id}
+          onClick={() => setAvisos((x) => x.filter((y) => y.id !== a.id))}
+          className={`rounded-lg border p-3 text-sm shadow-lg cursor-pointer ${a.tipo === 'ok' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}
+        >
+          {a.tipo === 'ok' ? '✓ ' : '⚠ '}{a.mensaje}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /** Tarjeta KPI del dashboard. */
 export function TarjetaKpi({

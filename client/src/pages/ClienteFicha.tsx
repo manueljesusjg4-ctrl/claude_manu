@@ -13,6 +13,7 @@ export function ClienteFicha() {
   const [c, setC] = useState<any>(null);
   const [modalEditar, setModalEditar] = useState(false);
   const [modalInter, setModalInter] = useState(false);
+  const [interEditar, setInterEditar] = useState<any>(null);
   const [modalSeg, setModalSeg] = useState(false);
   const [modalSolv, setModalSolv] = useState(false);
 
@@ -113,7 +114,10 @@ export function ClienteFicha() {
                     <p className="text-slate-700 mt-1">{i.resumen}</p>
                     {i.resultado && <p className="text-xs text-slate-500 mt-0.5">→ {i.resultado}</p>}
                   </div>
-                  <button className="text-xs text-slate-300 hover:text-red-500" onClick={async () => { await api.del(`/api/clientes/interacciones/${i.id}`); cargar(); }}>✕</button>
+                  <div className="flex gap-2 shrink-0">
+                    <button className="text-xs text-slate-400 hover:text-marino" title="Editar interacción" onClick={() => setInterEditar(i)}>✎</button>
+                    <button className="text-xs text-slate-300 hover:text-red-500" title="Eliminar interacción" onClick={async () => { if (confirm('¿Eliminar esta interacción?')) { await api.del(`/api/clientes/interacciones/${i.id}`); cargar(); } }}>✕</button>
+                  </div>
                 </div>
               ))}
               {c.interacciones.length === 0 && <p className="text-sm text-slate-400">Sin interacciones registradas.</p>}
@@ -149,6 +153,12 @@ export function ClienteFicha() {
 
       <Modal titulo="Nueva interacción" abierto={modalInter} alCerrar={() => setModalInter(false)} ancho="max-w-md">
         <FormInteraccion alGuardar={async (d) => { await api.post(`/api/clientes/${id}/interacciones`, d); setModalInter(false); cargar(); }} />
+      </Modal>
+
+      <Modal titulo="Editar interacción" abierto={!!interEditar} alCerrar={() => setInterEditar(null)} ancho="max-w-md">
+        {interEditar && (
+          <FormInteraccion inicial={interEditar} alGuardar={async (d) => { await api.put(`/api/clientes/interacciones/${interEditar.id}`, d); setInterEditar(null); cargar(); }} />
+        )}
       </Modal>
 
       <Modal titulo="Programar seguimiento" abierto={modalSeg} alCerrar={() => setModalSeg(false)} ancho="max-w-md">
@@ -205,8 +215,10 @@ const Dato = ({ k, v }: { k: string; v: any }) => (
   <div className="flex justify-between gap-3"><dt className="text-slate-500">{k}</dt><dd className="font-medium text-slate-800 text-right">{v || '—'}</dd></div>
 );
 
-function FormInteraccion({ alGuardar }: { alGuardar: (d: any) => void }) {
-  const [d, setD] = useState({ fecha: hoyInput(), tipo: 'LLAMADA', resumen: '', resultado: '' });
+function FormInteraccion({ inicial, alGuardar }: { inicial?: any; alGuardar: (d: any) => void }) {
+  const [d, setD] = useState(inicial
+    ? { fecha: fechaInput(inicial.fecha), tipo: inicial.tipo, resumen: inicial.resumen, resultado: inicial.resultado || '' }
+    : { fecha: hoyInput(), tipo: 'LLAMADA', resumen: '', resultado: '' });
   return (
     <form onSubmit={(e: FormEvent) => { e.preventDefault(); alGuardar(d); }} className="space-y-3">
       <div className="grid grid-cols-2 gap-3">

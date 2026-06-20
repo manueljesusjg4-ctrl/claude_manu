@@ -140,10 +140,62 @@ export function Configuracion() {
         </div>
       </div>
 
-      <div className="tarjeta p-5 mt-5">
-        <h3 className="font-bold text-marino mb-1">Usuarios</h3>
-        <p className="text-sm text-slate-500">Esta aplicación está pensada para los dos socios. Los accesos se gestionan en el servidor (seed inicial): <b>socio1</b> y <b>socio2</b>. Para cambiar las contraseñas, edita el archivo <code className="text-xs bg-slate-100 px-1 rounded">server/prisma/seed.ts</code> y vuelve a ejecutar la preparación de datos.</p>
-      </div>
+      <CambiarPassword />
+    </div>
+  );
+}
+
+/** Formulario para que el usuario conectado cambie su propia contraseña. */
+function CambiarPassword() {
+  const [actual, setActual] = useState('');
+  const [nueva, setNueva] = useState('');
+  const [repetir, setRepetir] = useState('');
+  const [mensaje, setMensaje] = useState<{ texto: string; ok: boolean } | null>(null);
+  const [enviando, setEnviando] = useState(false);
+
+  const guardar = async (e: FormEvent) => {
+    e.preventDefault();
+    setMensaje(null);
+    if (nueva !== repetir) {
+      setMensaje({ texto: 'La nueva contraseña y su repetición no coinciden.', ok: false });
+      return;
+    }
+    if (nueva.length < 6) {
+      setMensaje({ texto: 'La nueva contraseña debe tener al menos 6 caracteres.', ok: false });
+      return;
+    }
+    setEnviando(true);
+    try {
+      await api.put('/api/auth/password', { actual, nueva });
+      setMensaje({ texto: 'Contraseña cambiada correctamente ✓', ok: true });
+      setActual(''); setNueva(''); setRepetir('');
+    } catch (err: any) {
+      setMensaje({ texto: err.message || 'No se pudo cambiar la contraseña', ok: false });
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  return (
+    <div className="tarjeta p-5 mt-5 max-w-md">
+      <h3 className="font-bold text-marino mb-1">Cambiar mi contraseña</h3>
+      <p className="text-sm text-slate-500 mb-3">Cambia la contraseña con la que entras en la aplicación. Cada socio debe hacerlo desde su propia sesión.</p>
+      <form onSubmit={guardar} className="space-y-3">
+        <div>
+          <label className="etiqueta">Contraseña actual</label>
+          <input type="password" className="campo" value={actual} onChange={(e) => setActual(e.target.value)} autoComplete="current-password" />
+        </div>
+        <div>
+          <label className="etiqueta">Nueva contraseña</label>
+          <input type="password" className="campo" value={nueva} onChange={(e) => setNueva(e.target.value)} autoComplete="new-password" />
+        </div>
+        <div>
+          <label className="etiqueta">Repite la nueva contraseña</label>
+          <input type="password" className="campo" value={repetir} onChange={(e) => setRepetir(e.target.value)} autoComplete="new-password" />
+        </div>
+        {mensaje && <p className={`text-sm font-semibold ${mensaje.ok ? 'text-emerald-600' : 'text-red-600'}`}>{mensaje.texto}</p>}
+        <button className="boton-primario" disabled={enviando}>{enviando ? 'Guardando…' : 'Cambiar contraseña'}</button>
+      </form>
     </div>
   );
 }

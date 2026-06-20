@@ -45,9 +45,6 @@ export function Login() {
             {enviando ? 'Entrando…' : 'Entrar'}
           </button>
         </form>
-        <p className="text-xs text-slate-400 text-center mt-5">
-          Datos de ejemplo: <b>socio1</b> / <b>valencia2026</b>
-        </p>
       </div>
     </div>
   );

@@ -15,7 +15,9 @@ export function ObraFicha() {
   const [trabajadores, setTrabajadores] = useState<any[]>([]);
   const [modalEditar, setModalEditar] = useState(false);
   const [modalAsignar, setModalAsignar] = useState(false);
+  const [asignarEditar, setAsignarEditar] = useState<any>(null);
   const [modalParte, setModalParte] = useState(false);
+  const [parteEditar, setParteEditar] = useState<any>(null);
   const [aviso, setAviso] = useState('');
 
   const cargar = () => api.get(`/api/obras/${id}`).then(setO);
@@ -182,7 +184,12 @@ export function ObraFicha() {
                           {p.validado ? '✓ Validado' : 'Validar'}
                         </button>
                       </td>
-                      <td className="td"><button className="text-xs text-slate-300 hover:text-red-500" onClick={async () => { await api.del(`/api/obras/partes/${p.id}`); cargar(); }}>✕</button></td>
+                      <td className="td">
+                        <div className="flex gap-2">
+                          <button className="text-xs text-slate-400 hover:text-marino" title="Editar parte" onClick={() => setParteEditar(p)}>✎</button>
+                          <button className="text-xs text-slate-300 hover:text-red-500" title="Eliminar parte" onClick={async () => { if (confirm('¿Eliminar este parte de horas?')) { await api.del(`/api/obras/partes/${p.id}`); cargar(); } }}>✕</button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -224,7 +231,10 @@ export function ObraFicha() {
                     <p className="font-medium">{a.trabajador.nombre} {a.trabajador.apellidos}</p>
                     <p className="text-xs text-slate-500">{etiqueta(a.trabajador.categoria)} · {euros(a.precioVentaHora)}/h · desde {fecha(a.fechaInicio)}</p>
                   </div>
-                  <button className="text-xs text-slate-300 hover:text-red-500" onClick={async () => { await api.del(`/api/obras/asignaciones/${a.id}`); cargar(); }}>✕</button>
+                  <div className="flex gap-2 shrink-0">
+                    <button className="text-xs text-slate-400 hover:text-marino" title="Editar asignación" onClick={() => setAsignarEditar(a)}>✎</button>
+                    <button className="text-xs text-slate-300 hover:text-red-500" title="Quitar asignación" onClick={async () => { if (confirm('¿Quitar a este trabajador de la obra?')) { await api.del(`/api/obras/asignaciones/${a.id}`); cargar(); } }}>✕</button>
+                  </div>
                 </div>
               ))}
               {o.asignaciones.length === 0 && <p className="text-sm text-slate-400">Nadie asignado todavía.</p>}
@@ -273,8 +283,28 @@ export function ObraFicha() {
         <FormAsignar trabajadores={trabajadores} alGuardar={asignar} />
       </Modal>
 
+      <Modal titulo="Editar asignación" abierto={!!asignarEditar} alCerrar={() => setAsignarEditar(null)} ancho="max-w-md">
+        {asignarEditar && (
+          <FormAsignar
+            trabajadores={trabajadores}
+            inicial={asignarEditar}
+            alGuardar={async (d) => { await api.put(`/api/obras/asignaciones/${asignarEditar.id}`, d); setAsignarEditar(null); cargar(); }}
+          />
+        )}
+      </Modal>
+
       <Modal titulo="Añadir parte de horas" abierto={modalParte} alCerrar={() => setModalParte(false)} ancho="max-w-md">
         <FormParte asignaciones={o.asignaciones} alGuardar={async (d) => { await api.post(`/api/obras/${id}/partes`, d); setModalParte(false); cargar(); }} />
+      </Modal>
+
+      <Modal titulo="Editar parte de horas" abierto={!!parteEditar} alCerrar={() => setParteEditar(null)} ancho="max-w-md">
+        {parteEditar && (
+          <FormParte
+            asignaciones={o.asignaciones}
+            inicial={parteEditar}
+            alGuardar={async (d) => { await api.put(`/api/obras/partes/${parteEditar.id}`, d); setParteEditar(null); cargar(); }}
+          />
+        )}
       </Modal>
     </div>
   );
@@ -293,13 +323,16 @@ function FormOrden({ alGuardar }: { alGuardar: (directriz: string) => void }) {
   );
 }
 
-function FormAsignar({ trabajadores, alGuardar }: { trabajadores: any[]; alGuardar: (d: any) => void }) {
-  const [d, setD] = useState({ trabajadorId: '', fechaInicio: hoyInput(), fechaFin: '', precioVentaHora: '' });
+function FormAsignar({ trabajadores, inicial, alGuardar }: { trabajadores: any[]; inicial?: any; alGuardar: (d: any) => void }) {
+  const edicion = !!inicial;
+  const [d, setD] = useState(inicial
+    ? { trabajadorId: String(inicial.trabajadorId), fechaInicio: fechaInput(inicial.fechaInicio), fechaFin: inicial.fechaFin ? fechaInput(inicial.fechaFin) : '', precioVentaHora: String(inicial.precioVentaHora) }
+    : { trabajadorId: '', fechaInicio: hoyInput(), fechaFin: '', precioVentaHora: '' });
   return (
     <form onSubmit={(e: FormEvent) => { e.preventDefault(); alGuardar({ ...d, fechaFin: d.fechaFin || null }); }} className="space-y-3">
       <div>
         <label className="etiqueta">Trabajador *</label>
-        <select required className="campo" value={d.trabajadorId} onChange={(e) => setD({ ...d, trabajadorId: e.target.value })}>
+        <select required disabled={edicion} className="campo disabled:bg-slate-100 disabled:text-slate-500" value={d.trabajadorId} onChange={(e) => setD({ ...d, trabajadorId: e.target.value })}>
           <option value="">— Elegir —</option>
           {trabajadores.map((t) => <option key={t.id} value={t.id}>{t.nombre} {t.apellidos} ({etiqueta(t.categoria)})</option>)}
         </select>
@@ -309,13 +342,16 @@ function FormAsignar({ trabajadores, alGuardar }: { trabajadores: any[]; alGuard
         <div><label className="etiqueta">Hasta</label><input type="date" className="campo" value={d.fechaFin} onChange={(e) => setD({ ...d, fechaFin: e.target.value })} /></div>
       </div>
       <div><label className="etiqueta">Precio de venta por hora (€) *</label><input type="number" step="0.01" required className="campo" value={d.precioVentaHora} onChange={(e) => setD({ ...d, precioVentaHora: e.target.value })} /></div>
-      <div className="flex justify-end"><button className="boton-primario">Asignar</button></div>
+      <div className="flex justify-end"><button className="boton-primario">{edicion ? 'Guardar cambios' : 'Asignar'}</button></div>
     </form>
   );
 }
 
-function FormParte({ asignaciones, alGuardar }: { asignaciones: any[]; alGuardar: (d: any) => void }) {
-  const [d, setD] = useState({ trabajadorId: '', fecha: hoyInput(), horas: 8, notas: '' });
+function FormParte({ asignaciones, inicial, alGuardar }: { asignaciones: any[]; inicial?: any; alGuardar: (d: any) => void }) {
+  const edicion = !!inicial;
+  const [d, setD] = useState(inicial
+    ? { trabajadorId: String(inicial.trabajadorId), fecha: fechaInput(inicial.fecha), horas: inicial.horas, notas: inicial.notas || '' }
+    : { trabajadorId: '', fecha: hoyInput(), horas: 8, notas: '' });
   return (
     <form onSubmit={(e: FormEvent) => { e.preventDefault(); alGuardar(d); }} className="space-y-3">
       <div>
