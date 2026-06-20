@@ -22,7 +22,11 @@ rutasUploads.post('/', (req, res) => {
   subida.single('archivo')(req, res, async (err: any) => {
     if (err) return res.status(400).json({ error: err.message || 'Error al subir el archivo' });
     if (!req.file) return res.status(400).json({ error: 'No se ha recibido ningún archivo.' });
-    const url = await guardarArchivo(req.file.buffer, req.file.originalname);
-    res.status(201).json({ url, nombre: req.file.originalname });
+    try {
+      const url = await guardarArchivo(req.file.buffer, req.file.originalname);
+      res.status(201).json({ url, nombre: req.file.originalname });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || 'Error al guardar el archivo' });
+    }
   });
 });
