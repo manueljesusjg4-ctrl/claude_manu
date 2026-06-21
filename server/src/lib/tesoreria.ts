@@ -9,16 +9,20 @@
 //   - Anticipos de cliente con fecha futura.
 //
 // SALIDAS de dinero:
-//   - Nóminas: parte de salario del coste empresa, el último día de cada mes.
-//   - Seguridad Social (empresa): el último día del mes SIGUIENTE al devengo.
-//   - Pagas extra: en junio y diciembre (mes completo de devengo acumulado).
+//   - Nóminas: cada trabajador cobra cada 30 días desde su fecha de alta, NO
+//     todos el mismo día de calendario (cada uno tiene su propio ciclo).
+//   - Seguridad Social (empresa): el último día del mes SIGUIENTE al devengo
+//     (esto sí es un plazo legal fijo, independiente de cada trabajador).
+//   - Pagas extra: SOLO se pagan cuando se acaba una obra, y solo la parte
+//     proporcional devengada durante el tiempo trabajado en esa obra (no la
+//     paga completa, y no en una fecha fija de junio/diciembre).
 //   - Gastos fijos recurrentes: cada mes. Gastos puntuales: en su fecha.
 //
 // El objetivo es detectar las semanas en que la caja proyectada queda en
 // negativo, porque la empresa adelanta nóminas antes de cobrar.
 // ============================================================================
 import { prisma } from './prisma';
-import { claveDia, finDeMes, finDeMesSiguiente, lunesDeSemana, sumarDias } from './fechas';
+import { claveDia, finDeMes, finDeMesSiguiente, lunesDeSemana, mesesEntre, sumarDias } from './fechas';
 
 export interface MovimientoCaja {
   fecha: string;       // AAAA-MM-DD
@@ -104,40 +108,41 @@ export async function generarMovimientos(desde: Date, hasta: Date): Promise<Movi
     }
   }
 
-  // ---- SALIDAS: nóminas, Seguridad Social y pagas extra ---------------------
+  // ---- SALIDAS: nóminas -------------------------------------------------
+  // Cada trabajador cobra cada 30 días desde que empezó a trabajar (su
+  // propio ciclo), no todos el mismo día de calendario.
   const trabajadores = await prisma.trabajador.findMany({ where: { estado: 'ACTIVO' } });
-  const costeBaseTotal = trabajadores.reduce((s, t) => s + t.costeEmpresaMensual, 0);
   const porcSS = config.porcentajeSeguridadSocial / 100;
-  const salarioMes = costeBaseTotal * (1 - porcSS); // parte que se paga al trabajador a fin de mes
-  const ssMes = costeBaseTotal * porcSS;            // parte que se ingresa a la SS el mes siguiente
-  // Cada paga extra equivale a ~6 meses de devengo del % de extras
-  const pagaExtra = costeBaseTotal * (config.porcentajePagasExtra / 100) * 6;
+  const TREINTA_DIAS_MS = 30 * 24 * 60 * 60 * 1000;
 
-  // Recorremos mes a mes el horizonte de proyección
+  for (const t of trabajadores) {
+    const salarioMes = t.costeEmpresaMensual * (1 - porcSS);
+    let ciclo = Math.max(1, Math.ceil((desde.getTime() - t.fechaAlta.getTime()) / TREINTA_DIAS_MS));
+    let fechaPago = sumarDias(t.fechaAlta, 30 * ciclo);
+    while (fechaPago <= hasta) {
+      if (fechaPago >= desde) {
+        movimientos.push({
+          fecha: claveDia(fechaPago),
+          tipo: 'SALIDA',
+          categoria: 'NOMINA',
+          concepto: `Nómina — ${t.nombre} ${t.apellidos}`,
+          importe: r2(salarioMes),
+        });
+      }
+      ciclo++;
+      fechaPago = sumarDias(t.fechaAlta, 30 * ciclo);
+    }
+  }
+
+  // ---- SALIDAS: Seguridad Social (empresa) -------------------------------
+  // El total cotizado se ingresa el último día del mes SIGUIENTE al devengo;
+  // es un plazo legal fijo de la empresa, no depende del ciclo de cada
+  // trabajador.
+  const costeBaseTotal = trabajadores.reduce((s, t) => s + t.costeEmpresaMensual, 0);
+  const ssMes = costeBaseTotal * porcSS;
   const cursor = new Date(desde.getFullYear(), desde.getMonth(), 1);
   const finHorizonte = new Date(hasta.getFullYear(), hasta.getMonth() + 1, 1);
   while (cursor < finHorizonte) {
-    const fdm = finDeMes(cursor);
-    if (fdm >= desde && fdm <= hasta && trabajadores.length > 0) {
-      movimientos.push({
-        fecha: claveDia(fdm),
-        tipo: 'SALIDA',
-        categoria: 'NOMINA',
-        concepto: `Nóminas ${trabajadores.length} trabajador(es) (${cursor.toLocaleDateString('es-ES', { month: 'long' })})`,
-        importe: r2(salarioMes),
-      });
-      // Pagas extra: junio (mes 5) y diciembre (mes 11)
-      if (cursor.getMonth() === 5 || cursor.getMonth() === 11) {
-        movimientos.push({
-          fecha: claveDia(fdm),
-          tipo: 'SALIDA',
-          categoria: 'PAGA_EXTRA',
-          concepto: `Paga extra de ${cursor.getMonth() === 5 ? 'junio' : 'diciembre'}`,
-          importe: r2(pagaExtra),
-        });
-      }
-    }
-    // SS del mes devengado se paga a fin del mes siguiente
     const fdmSig = finDeMesSiguiente(cursor);
     if (fdmSig >= desde && fdmSig <= hasta && trabajadores.length > 0) {
       movimientos.push({
@@ -149,6 +154,36 @@ export async function generarMovimientos(desde: Date, hasta: Date): Promise<Movi
       });
     }
     cursor.setMonth(cursor.getMonth() + 1);
+  }
+
+  // ---- SALIDAS: pagas extra al finalizar cada obra -----------------------
+  // Solo se paga cuando una obra termina, y solo la parte proporcional
+  // devengada durante el tiempo que cada trabajador estuvo asignado a esa
+  // obra (no la paga extra completa).
+  const obrasQueFinalizan = await prisma.obra.findMany({
+    where: { estado: { in: ['ACTIVA', 'FINALIZADA'] }, fechaFinPrevista: { gte: desde, lte: hasta } },
+    include: { asignaciones: { include: { trabajador: true } } },
+  });
+  for (const obra of obrasQueFinalizan) {
+    if (!obra.fechaFinPrevista) continue;
+    let totalExtra = 0;
+    let nTrabajadores = 0;
+    for (const a of obra.asignaciones) {
+      const fin = a.fechaFin && a.fechaFin < obra.fechaFinPrevista ? a.fechaFin : obra.fechaFinPrevista;
+      if (fin <= a.fechaInicio) continue;
+      const meses = mesesEntre(a.fechaInicio, fin);
+      totalExtra += a.trabajador.costeEmpresaMensual * (config.porcentajePagasExtra / 100) * meses;
+      nTrabajadores++;
+    }
+    if (totalExtra > 0) {
+      movimientos.push({
+        fecha: claveDia(obra.fechaFinPrevista),
+        tipo: 'SALIDA',
+        categoria: 'PAGA_EXTRA',
+        concepto: `Paga extra fin de obra "${obra.nombre}" — parte proporcional de ${nTrabajadores} trabajador(es)`,
+        importe: r2(totalExtra),
+      });
+    }
   }
 
   // ---- SALIDAS: gastos -------------------------------------------------------
