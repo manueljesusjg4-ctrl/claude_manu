@@ -7,6 +7,11 @@
 //     financiero) entra en la fecha del anticipo.
 //     Los anticipos de cliente ya aplicados se descuentan del importe a cobrar.
 //   - Anticipos de cliente con fecha futura.
+//   - Obras "por administración" activas: aunque todavía no se haya creado
+//     la factura a mano, se anticipa el cobro de lo ya trabajado (cada 30
+//     días desde que arrancó la obra, cobrado al plazo pactado con el
+//     cliente) y, para los ciclos siguientes, una estimación si el equipo
+//     sigue trabajando a jornada completa.
 //
 // SALIDAS de dinero:
 //   - Nóminas: cada trabajador cobra cada 30 días desde su fecha de alta, NO
@@ -23,6 +28,9 @@
 // ============================================================================
 import { prisma } from './prisma';
 import { claveDia, finDeMes, finDeMesSiguiente, lunesDeSemana, mesesEntre, sumarDias } from './fechas';
+import { calcularEconomicoObra } from './economiaObra';
+
+const TREINTA_DIAS_MS = 30 * 24 * 60 * 60 * 1000;
 
 export interface MovimientoCaja {
   fecha: string;       // AAAA-MM-DD
@@ -108,12 +116,59 @@ export async function generarMovimientos(desde: Date, hasta: Date): Promise<Movi
     }
   }
 
+  // ---- ENTRADAS: facturación esperada de obras por administración --------
+  // En las obras "por administración" el cobro real no aparece en la
+  // proyección hasta que se crea la factura a mano. Aquí se anticipa: lo ya
+  // trabajado y aún sin certificar se certifica en el próximo ciclo de 30
+  // días desde que arrancó la obra, y se cobra al plazo pactado con el
+  // cliente; los ciclos siguientes (trabajo que aún no se ha hecho) se
+  // estiman asumiendo que el equipo asignado sigue a jornada completa.
+  const obrasAdmin = await prisma.obra.findMany({
+    where: { tipo: 'ADMINISTRACION', estado: 'ACTIVA' },
+    include: { asignaciones: true, cliente: true },
+  });
+  for (const obra of obrasAdmin) {
+    let inicioCiclo: Date | null = obra.fechaInicio;
+    for (const a of obra.asignaciones) {
+      if (!inicioCiclo || a.fechaInicio < inicioCiclo) inicioCiclo = a.fechaInicio;
+    }
+    if (!inicioCiclo) continue;
+
+    const asignacionesActivas = obra.asignaciones.filter((a) => !a.fechaFin || a.fechaFin > hasta);
+    const plazo = obra.plazoCobroDias ?? obra.cliente.plazoPagoDias ?? config.plazoCobroDefecto;
+    const eco = await calcularEconomicoObra(obra.id);
+    const pendienteConIva = eco.pendienteCertificar * (1 + config.porcentajeIva / 100);
+    const facturacionFuturaConIva =
+      asignacionesActivas.reduce((s, a) => s + config.horasMes * a.precioVentaHora, 0) * (1 + config.porcentajeIva / 100);
+
+    let ciclo = Math.max(1, Math.ceil((desde.getTime() - inicioCiclo.getTime()) / TREINTA_DIAS_MS));
+    let esPrimerCicloEnVentana = true;
+    while (true) {
+      const fechaCiclo = sumarDias(inicioCiclo, 30 * ciclo);
+      const fechaCobro = sumarDias(fechaCiclo, plazo);
+      if (fechaCobro > hasta) break;
+      if (fechaCobro >= desde) {
+        const importe = esPrimerCicloEnVentana ? pendienteConIva : facturacionFuturaConIva;
+        if (importe > 0.01) {
+          movimientos.push({
+            fecha: claveDia(fechaCobro),
+            tipo: 'ENTRADA',
+            categoria: 'COBRO_ADMINISTRACION_PREVISTO',
+            concepto: `Cobro previsto certificación "${obra.nombre}" (${esPrimerCicloEnVentana ? 'trabajado pendiente de certificar' : 'estimado'})`,
+            importe: r2(importe),
+          });
+        }
+        esPrimerCicloEnVentana = false;
+      }
+      ciclo++;
+    }
+  }
+
   // ---- SALIDAS: nóminas -------------------------------------------------
   // Cada trabajador cobra cada 30 días desde que empezó a trabajar (su
   // propio ciclo), no todos el mismo día de calendario.
   const trabajadores = await prisma.trabajador.findMany({ where: { estado: 'ACTIVO' } });
   const porcSS = config.porcentajeSeguridadSocial / 100;
-  const TREINTA_DIAS_MS = 30 * 24 * 60 * 60 * 1000;
 
   for (const t of trabajadores) {
     const salarioMes = t.costeEmpresaMensual * (1 - porcSS);
